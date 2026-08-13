@@ -1,7 +1,7 @@
 // Arquivo smart_calculator.js
 // Criado em 31/08/2020 as 18:21 por Acrisio
 // Algoritmo que calcula o lançamento obliquo com resistência do meio e o efeito magnus.
-// Obtido atraves de engenharia reversa do pangya. 
+// Obtido atraves de engenharia reversa do pangya.
 
 const DESVIO_SCALE_PANGYA_TO_YARD = 0.3125 / 1.5;
 

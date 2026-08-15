@@ -1240,7 +1240,7 @@ function calc(el) {
                 )
             );
 
-        } while (f[index_f].power != -1 && f[index_f -1].power != -1 && Math.abs(f[index_f - 1].desvio - f[index_f].desvio) >= 0.05);
+        } while (f[index_f].power != -1 && f[index_f -1].power != -1 && Math.abs(f[index_f - 1].desvio - f[index_f].desvio) >= 0.00001);
     }
 
     if (f[index_f].power != -1) {
@@ -1251,7 +1251,7 @@ function calc(el) {
 		Power : ${(f[index_f].power * 100).toFixed(3)}%
 	</text><br>
 	<text style="color:Pink"><text style="font-size:16px">
-		HWI : ${(desvioByDegree(f[index_f].desvio, distance) / 0.2167).toFixed(4)} pb
+		HWI : ${((desvioByDegree(f[index_f].desvio, distance) / 0.2167) * dis).toFixed(4)} pb
 	</text><br>
 	<text style="color:Pink"><text style="font-size:16px">
 		AIM : ${(((desvioByDegree(f[index_f].desvio, distance) / 0.2167) * dis ) / aim ).toFixed(4)} aim
@@ -1281,7 +1281,7 @@ function calcMycella(el) {
 
     const slope_real = Math.abs((Math.cos(Math.abs(Math.PI  / 180 * (align_degree)))) * (px / 30.7));
 
-    document.getElementById('slope_break').value = ((slope_real * x_slope) * slope_side).toFixed(3);
+    document.getElementById('slope_break').value = ((slope_real * x_slope) * slope_side).toFixed(4);
 }
 
 function checkdrive(el) {
@@ -1404,17 +1404,17 @@ function smartDesvio(smartData) {
     let pb_sample = yards / YARDS_TO_PB;
 
     if (Math.abs(pb_sample) <= MAX_PB)
-        return `${pb_sample.toFixed(3)}pb`;
+        return `${pb_sample.toFixed(4)}pb`;
 
     pb_sample = yards / YARDS_TO_PBA;
 
     if (Math.abs(pb_sample) <= MAX_PB)
-        return `${pb_sample.toFixed(3)}pba`;
+        return `${pb_sample.toFixed(4)}pba`;
 
     pb_sample = yards / YARDS_TO_PBA_PLUS;
 
     if (Math.abs(pb_sample) <= MAX_PB)
-        return `${pb_sample.toFixed(3)}pba+`;
+        return `${pb_sample.toFixed(4)}pba+`;
 
     // key 0 from keybord
     let powerRange = 230;
@@ -1428,8 +1428,8 @@ function smartDesvio(smartData) {
         pb_sample = (yards / YARDS_TO_PB) / ((powerRange * 3.2 * 1.4 - smartData.altura) * 0.0625)
 
         if (Math.abs(pb_sample) <= MAX_PB)
-            return `${pb_sample.toFixed(3)}pba${powerRange}`
+            return `${pb_sample.toFixed(4)}pba${powerRange}`
     }
     
-    return `${pb_sample.toFixed(3)}pba${powerRange}`
+    return `${pb_sample.toFixed(4)}pba${powerRange}`
 }

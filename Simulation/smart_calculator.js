@@ -986,9 +986,25 @@ const find_power = (power_player, club_info, shot, power_shot, distancia, altura
 
             qt.ballProcess(_00D083A0);
     
-        }while((vball.position.y > altura_colision || vball.num_max_height == -1) && (count++) < 3000)
+        }while((vball.position.y > altura_colision || vball.num_max_height == -1) && (count++) < limit_checking)
 
-        let last_step = Math.abs((altura_colision - copy_ball.position.y) / (vball.position.y - copy_ball.position.y));
+        // If the ball never actually got above altura_colision, this shot definitively
+        // does not have enough power to clear the target's elevation -- that's a real,
+        // reliably-signed undershoot, no interpolation needed (and none is safe: both
+        // samples are on the same side of the threshold).
+        if (copy_ball.position.y <= altura_colision)
+            return distanciaScale; // treat as a large, correctly-signed undershoot
+
+        const heightDelta = vball.position.y - copy_ball.position.y;
+
+        // Genuine crossing (copy_ball above, vball below) but the two samples are almost
+        // the same height -- the ball is essentially grazing the threshold. Interpolating
+        // here divides by a near-zero number and explodes; since we're already right at
+        // the crossing, treat it as "close enough" instead.
+        if (Math.abs(heightDelta) < 1e-6)
+            return 0;
+
+        let last_step = Math.abs((altura_colision - copy_ball.position.y) / heightDelta);
 
         vball.copy(copy_ball);
 
@@ -1003,9 +1019,8 @@ const find_power = (power_player, club_info, shot, power_shot, distancia, altura
     const qt = new QuadTree();
 
     let ret = 0;
-
-    let lado = 0;
-    let feed = 0.00006;
+    let lowBound = null, highBound = null; // percentShot known to undershoot / overshoot
+    const bracketStep = 0.1;
 
     do {
 
@@ -1019,28 +1034,42 @@ const find_power = (power_player, club_info, shot, power_shot, distancia, altura
 
         ret = findAlturaColision(qt, altura_colision);
 
-        if (ret == 0)
+        if (ret == 0) {
             isFind = true;
-        else {
-
-            // Não tem como achar a força por que nem mandando 100% chega
-            // 130% é um limite seguro, para ter a % da tacada mesmo que não chega, só para saber se estava perto e usar no macro de silvia cannon
-            if (options.percentShot == 1.3 && ret > 0)
-                break;
-
-            // Não tem como achar a força por que não pode mandar 0.0 de porcentagem
-            if (options.percentShot == 0.1 && ret < 0)
-                break;
-
-            if (lado == 0)
-                lado = (ret < 0 ? -1 : 1);
-            else if ((ret < 0 && lado == 1) || (ret > 0 && lado == -1))
-                feed *= 0.5;
-
-            options.percentShot += ret * feed;
+            break;
         }
 
-    } while (!isFind && (count++) < limit_checking);
+        // Não tem como achar a força por que nem mandando 100% chega
+        if (options.percentShot == 1.3 && ret > 0)
+            break;
+
+        // Não tem como achar a força por que não pode mandar 0.0 de porcentagem
+        if (options.percentShot == 0.1 && ret < 0)
+            break;
+
+        if (ret > 0) {
+            if (lowBound === null || options.percentShot > lowBound)
+                lowBound = options.percentShot;
+        } else {
+            if (highBound === null || options.percentShot < highBound)
+                highBound = options.percentShot;
+        }
+
+        if (lowBound !== null && highBound !== null) {
+            // Bracketed: true bisection halves the interval every time and can never
+            // underflow to a stuck step size the way the old feed-based search could.
+            if (highBound - lowBound < 1e-12)
+                break; // reached floating-point resolution floor between the two bounds
+            options.percentShot = (lowBound + highBound) / 2;
+        } else if (highBound !== null) {
+            options.percentShot = highBound - bracketStep;
+        } else if (lowBound !== null) {
+            options.percentShot = lowBound + bracketStep;
+        } else {
+            options.percentShot += ret > 0 ? bracketStep : -bracketStep;
+        }
+
+    } while (!isFind && (count++) < limit_checking); //} while (!isFind);
 
     if (isFind) {
 
@@ -1237,6 +1266,8 @@ function calc(el) {
     let spin = checkValidInput(document.getElementById('spin').value);
     let curve = checkValidInput(document.getElementById('curve').value);
     let slope_break = checkValidInputSlope(document.getElementById('slope_break').value);
+    let dis = checkValidInput(document.getElementById('dis').value);
+    let aim = checkValidInput(document.getElementById('aim').value);
 
 
     let power_percent = 0.0;
@@ -1326,10 +1357,13 @@ function calc(el) {
             Distance : ${simulation.distance.toFixed(3)}y
         </text><br>
         <text style="color:Pink"><text style="font-size:16px">
-            HWI (PB) : ${simulation.pb.toFixed(4)} pb
+            HWI : ${(simulation.pb * dis).toFixed(4)} pb
+        </text><br><br>
+        <text style="color:Pink"><text style="font-size:16px">
+            HWI (y) : ${simulation.desvio.toFixed(4)} y
         </text><br>
         <text style="color:Pink"><text style="font-size:16px">
-            HWI (y) : ${simulation.desvio.toFixed(4)}y
+            Aim : ${((simulation.pb * dis)/(aim)).toFixed(4)} aim
         </text><br>`;
     } else {
         result.color = 'Pink';
@@ -1346,7 +1380,7 @@ function calcMycella(el) {
 
     const slope_real = Math.abs((Math.cos(Math.abs(Math.PI  / 180 * (align_degree)))) * (px / 30.7));
 
-    document.getElementById('slope_break').value = ((slope_real * x_slope) * slope_side).toFixed(3);
+    document.getElementById('slope_break').value = ((slope_real * x_slope) * slope_side).toFixed(4);
 }
 
 function checkdrive(el) {
@@ -1469,17 +1503,17 @@ function smartDesvio(smartData) {
     let pb_sample = yards / YARDS_TO_PB;
 
     if (Math.abs(pb_sample) <= MAX_PB)
-        return `${pb_sample.toFixed(3)}pb`;
+        return `${pb_sample.toFixed(4)}pb`;
 
     pb_sample = yards / YARDS_TO_PBA;
 
     if (Math.abs(pb_sample) <= MAX_PB)
-        return `${pb_sample.toFixed(3)}pba`;
+        return `${pb_sample.toFixed(4)}pba`;
 
     pb_sample = yards / YARDS_TO_PBA_PLUS;
 
     if (Math.abs(pb_sample) <= MAX_PB)
-        return `${pb_sample.toFixed(3)}pba+`;
+        return `${pb_sample.toFixed(4)}pba+`;
 
     // key 0 from keybord
     let powerRange = 230;
@@ -1493,8 +1527,8 @@ function smartDesvio(smartData) {
         pb_sample = (yards / YARDS_TO_PB) / ((powerRange * 3.2 * 1.4 - smartData.altura) * 0.0625)
 
         if (Math.abs(pb_sample) <= MAX_PB)
-            return `${pb_sample.toFixed(3)}pba${powerRange}`
+            return `${pb_sample.toFixed(4)}pba${powerRange}`
     }
     
-    return `${pb_sample.toFixed(3)}pba${powerRange}`
+    return `${pb_sample.toFixed(4)}pba${powerRange}`
 }

@@ -1207,26 +1207,34 @@ const SHOT_TYPE = {
 
 
 function checkValidInput(value) {
-        
-    if (value == '' || isNaN(value))
-        return 0.0;
+    if (value == null || value.trim() === '')
+        return 0;
 
-    return Number(value);
+    const number = Number(value);
+
+    return Number.isNaN(number) ? 0 : number;
 }
 
 function checkValidInputSlope(value) {
 
-    if (value == '')
-        return 0.0;
+    if (value === '')
+        return 0;
 
     if (isNaN(value)) {
 
-        let split = value.split(',');
+        const split = value.split(',');
 
-        if (split.length !== 3 || isNaN(split[0]) || isNaN(split[1]) || isNaN(split[2]))
-            return 0.0;
+        if (split.length !== 3 ||
+            isNaN(split[0]) ||
+            isNaN(split[1]) ||
+            isNaN(split[2]))
+            return 0;
 
-        return new Vector3D(Number(split[0]) * slope_break_to_curve_slope, Number(split[1]) * Math.PI / 180, Number(split[2]) * slope_break_to_curve_slope);
+        return new Vector3D(
+            Number(split[0]) * slope_break_to_curve_slope,
+            Number(split[1]) * Math.PI / 180,
+            Number(split[2]) * slope_break_to_curve_slope
+        );
     }
 
     return Number(value);
@@ -1295,8 +1303,8 @@ function calc(el) {
             power_percent = power_used / club_range;
 
     // 100 % ground
-    if (ground == 0.0)
-        ground = 100.0;
+    // if (ground == 0.0)
+    //    ground = 100.0;
 
     let result = document.getElementById('result');
 

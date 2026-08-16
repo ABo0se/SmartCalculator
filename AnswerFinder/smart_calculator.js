@@ -1092,26 +1092,34 @@ const SHOT_TYPE = {
 
 
 function checkValidInput(value) {
-        
-    if (value == '' || isNaN(value))
-        return 0.0;
+    if (value == null || value.trim() === '')
+        return 0;
 
-    return Number(value);
+    const number = Number(value);
+
+    return Number.isNaN(number) ? 0 : number;
 }
 
 function checkValidInputSlope(value) {
 
-    if (value == '')
-        return 0.0;
+    if (value === '')
+        return 0;
 
     if (isNaN(value)) {
 
-        let split = value.split(',');
+        const split = value.split(',');
 
-        if (split.length !== 3 || isNaN(split[0]) || isNaN(split[1]) || isNaN(split[2]))
-            return 0.0;
+        if (split.length !== 3 ||
+            isNaN(split[0]) ||
+            isNaN(split[1]) ||
+            isNaN(split[2]))
+            return 0;
 
-        return new Vector3D(Number(split[0]) * slope_break_to_curve_slope, Number(split[1]) * Math.PI / 180, Number(split[2]) * slope_break_to_curve_slope);
+        return new Vector3D(
+            Number(split[0]) * slope_break_to_curve_slope,
+            Number(split[1]) * Math.PI / 180,
+            Number(split[2]) * slope_break_to_curve_slope
+        );
     }
 
     return Number(value);
@@ -1155,11 +1163,10 @@ function calc(el) {
     let aim = checkValidInputSlope(document.getElementById('aim').value);
 
     // 100 % ground
-    if (ground == 0.0)
-        ground = 100.0;
+    // if (ground == 0.0)
+    //    ground = 100.0;
 
     let result = document.getElementById('result');
-    let result2 = document.getElementById('result');
 
     // Make options
     const input_values = {
@@ -1211,36 +1218,179 @@ function calc(el) {
                                 input_values.slope);
 
     let f = [found];
+    let attemptAims = [0]; // aim value used for each corresponding f[] entry (parallel array)
     let index_f = 0;
 
     if (found.power != -1) {
 
-        do {
+        // The old loop assumed the goal was to make desvio (sideways drift) reach zero.
+        // That's wrong: the actual goal is a FIXED POINT of aim = atan2(desvio(aim)*1.5,
+        // distance) -- the aim where the correction this formula computes matches the aim
+        // that produced it. That fixed point can legitimately sit at a nonzero desvio
+        // (confirmed against known-correct answers), so searching for a desvio=0 crossing
+        // -- as an earlier version of this fix did -- can converge to a completely
+        // different, wrong aim angle instead of the intended one.
+        //
+        // G(aim) = atan2(desvio(aim)*1.5, distance) - aim is zero exactly at that fixed
+        // point. Scan outward from aim=0 for a sign change in G (skipping isolated gaps
+        // where find_power itself fails to converge for unrelated reasons -- this can
+        // happen at individual aim values even when both neighbors succeed), then bisect.
+        const AIM_SCAN_STEP = 0.01 * Math.PI;
+        const AIM_SCAN_MAX_STEPS = 100;
+        const AIM_BISECT_MAX_ITER = 60;
+        const AIM_MINIMIZE_MAX_ITER = 40;
+        const AIM_CONVERGE_THRESHOLD = 0.00001;
 
-            index_f++;
+        const tryAim = (aim, warmPower) => find_power(
+            input_values.power_player,
+            input_values.club_info,
+            input_values.shot,
+            input_values.power_shot,
+            input_values.distance,
+            input_values.height,
+            input_values.wind,
+            input_values.degree,
+            input_values.ground,
+            input_values.spin,
+            input_values.curva,
+            input_values.slope,
+            aim,
+            warmPower
+        );
+        const fixedPointGap = (r, aim) => Math.atan2(r.desvio * 1.5, input_values.distance) - aim;
+        const pushAttempt = (aim, r) => { f.push(r); attemptAims.push(aim); };
 
-            f.push
-            (
-                find_power
-                (   
-                    input_values.power_player,
-                    input_values.club_info,
-                    input_values.shot,
-                    input_values.power_shot,
-                    input_values.distance, 
-                    input_values.height, 
-                    input_values.wind, 
-                    input_values.degree, 
-                    input_values.ground, 
-                    input_values.spin, 
-                    input_values.curva, 
-                    input_values.slope,
-                    Math.atan2(f[index_f - 1].desvio * 1.5, input_values.distance), 
-                    f[index_f - 1].power
-                )
-            );
+        const baseGap = fixedPointGap(f[0], 0);
+        let bracketLoAim = null, bracketLoGap = null, bracketHiAim = null;
 
-        } while (f[index_f].power != -1 && f[index_f -1].power != -1 && Math.abs(f[index_f - 1].desvio - f[index_f].desvio) >= 0.00001);
+        scanLoop:
+        for (const dir of [1, -1]) {
+            let prevAim = 0, prevGap = baseGap, prevPower = f[0].power;
+            for (let step = 1; step <= AIM_SCAN_MAX_STEPS; step++) {
+                const aim = dir * AIM_SCAN_STEP * step;
+                const r = tryAim(aim, prevPower);
+                pushAttempt(aim, r);
+                if (r.power == -1)
+                    continue; // isolated gap in find_power's own search -- skip, keep scanning this direction
+
+                const gap = fixedPointGap(r, aim);
+                if (Math.sign(gap) !== Math.sign(prevGap) && gap !== prevGap) {
+                    bracketLoAim = prevAim; bracketLoGap = prevGap;
+                    bracketHiAim = aim;
+                    break scanLoop;
+                }
+
+                prevAim = aim; prevGap = gap; prevPower = r.power;
+            }
+        }
+
+        if (bracketLoAim !== null) {
+
+            let loAim = bracketLoAim, loGap = bracketLoGap;
+            let hiAim = bracketHiAim;
+            let warmPower = f[f.length - 1].power;
+
+            for (let i = 0; i < AIM_BISECT_MAX_ITER; i++) {
+                if (Math.abs(hiAim - loAim) < 1e-12)
+                    break; // reached floating-point resolution floor between the two bounds
+
+                const midAim = (loAim + hiAim) / 2;
+                const r = tryAim(midAim, warmPower);
+                pushAttempt(midAim, r);
+
+                if (r.power == -1) {
+                    hiAim = midAim; // gap inside the bracket -- narrow toward the known-good side
+                    continue;
+                }
+
+                warmPower = r.power;
+                const gap = fixedPointGap(r, midAim);
+
+                if (Math.abs(gap) < AIM_CONVERGE_THRESHOLD) 
+                {
+                    index_f = f.length - 1;
+                    // alert("OK! Potential Gap Error : " + gap);
+                    break;
+                }
+                else
+                {
+                    // alert("Potential Gap Error : " + gap);
+                }
+
+                if (Math.sign(gap) === Math.sign(loGap)) {
+                    loAim = midAim; loGap = gap;
+                } else {
+                    hiAim = midAim;
+                }
+                index_f = f.length - 1;
+            }
+
+        } else {
+            f[index_f].power = -1
+            // Temporaily disable it, as value is very unstable.
+
+            // // No fixed point reachable anywhere in the scanned range -- some combinations
+            // // of elevation/wind/slope are simply too extreme for any aim to make the
+            // // correction formula self-consistent (confirmed: G(aim) can stay one-signed
+            // // across the entire valid aim range). Rather than silently falling back to the
+            // // uncorrected aim=0 answer, minimize |G(aim)| instead -- the closest this shot
+            // // can actually get to a genuine fixed point. Bracket the scan's best point with
+            // // its immediate neighbors (by aim value) and refine with golden-section search.
+            // const validIdx = f.map((r, i) => i).filter(i => f[i].power != -1);
+            // if (validIdx.length >= 3) {
+            //     validIdx.sort((a, b) => attemptAims[a] - attemptAims[b]);
+            //     const gapAbsAt = (i) => Math.abs(fixedPointGap(f[i], attemptAims[i]));
+            //     let bestPos = validIdx.reduce((bestI, i, pos) =>
+            //         gapAbsAt(i) < gapAbsAt(validIdx[bestI]) ? pos : bestI
+            //     , 0);
+
+            //     if (bestPos > 0 && bestPos < validIdx.length - 1) {
+            //         let loAim = attemptAims[validIdx[bestPos - 1]];
+            //         let hiAim = attemptAims[validIdx[bestPos + 1]];
+            //         let warmPower = f[validIdx[bestPos]].power;
+
+            //         const GOLDEN_RATIO = (Math.sqrt(5) - 1) / 2;
+            //         let c = hiAim - GOLDEN_RATIO * (hiAim - loAim);
+            //         let d = loAim + GOLDEN_RATIO * (hiAim - loAim);
+            //         let rc = tryAim(c, warmPower); pushAttempt(c, rc);
+            //         if (rc.power != -1) { warmPower = rc.power; index_f = f.length - 1; }
+            //         let rd = tryAim(d, warmPower); pushAttempt(d, rd);
+            //         if (rd.power != -1) { warmPower = rd.power; index_f = f.length - 1; }
+
+            //         for (let i = 0; i < AIM_MINIMIZE_MAX_ITER; i++) {
+            //             if (rc.power == -1 || rd.power == -1 || Math.abs(hiAim - loAim) < 1e-10)
+            //                 break;
+
+            //             const gc = Math.abs(fixedPointGap(rc, c));
+            //             const gd = Math.abs(fixedPointGap(rd, d));
+            //             alert(
+            //                     `Iteration: ${i}\n` +
+            //                     `Aim C: ${(c * 180 / Math.PI).toFixed(6)}°\n` +
+            //                     `Gap C: ${gc}\n` +
+            //                     `|Gap C|: ${gc}\n` +
+            //                     `Aim D: ${(d * 180 / Math.PI).toFixed(6)}°\n` +
+            //                     `Gap D: ${gd}\n` +
+            //                     `|Gap D|: ${gd}`
+            //                 );
+
+            //             if (gc < gd) {
+            //                 hiAim = d; d = c; rd = rc;
+            //                 c = hiAim - GOLDEN_RATIO * (hiAim - loAim);
+            //                 rc = tryAim(c, warmPower); pushAttempt(c, rc);
+            //             } else {
+            //                 loAim = c; c = d; rc = rd;
+            //                 d = loAim + GOLDEN_RATIO * (hiAim - loAim);
+            //                 rd = tryAim(d, warmPower); pushAttempt(d, rd);
+            //             }
+            //             if (rc.power != -1) { warmPower = rc.power; }
+            //             if (rd.power != -1) { warmPower = rd.power; }
+            //             index_f = f.length - 1;
+            //         }
+            //     }
+            // }
+        }
+        // If nothing above ever found a valid improvement, index_f stays 0 -- the original
+        // aim=0 attempt, never worse than what the tool could do before any refinement.
     }
 
     if (f[index_f].power != -1) {

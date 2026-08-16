@@ -7,6 +7,8 @@ class DataInformation
     heightend = 0;
     windstart = 0;
     windend = 0;
+    winddegstart = 0;
+    winddegend = 0;
     slopestart = 0;
     slopeend = 0;
     groundstart = 100;
@@ -20,16 +22,19 @@ class DataInformation
     // 0 = Distance
     // 1 = Height
     // 2 = Wind
-    // 3 = Slope
-    // 4 = Ground
-    // 5 = Spin
-    // 6 = Curve
+    // 3 = Wind Degree
+    // 4 = Slope
+    // 5 = Ground
+    // 6 = Spin
+    // 7 = Curve
     // -1 = not defined
     datatype = -1;
+    dataloopcount = 0;
 
     // Default
     DiffRate = 1;
     Aim = 4;
+    HWIMultiplier = 1;
 }
 
 class AnswerFinder{
@@ -38,6 +43,7 @@ class AnswerFinder{
     heightlist = [];
     windlist = [];
     slopelist = [];
+    winddeglist = [];
     groundlist = [];
     spinlist = [];
     curvelist = [];
@@ -90,6 +96,8 @@ function GetAnswer()
     mydata.heightend = document.getElementById("height2").value;
     mydata.windstart = document.getElementById("wind1").value;
     mydata.windend = document.getElementById("wind2").value;
+    mydata.winddegstart = document.getElementById("degree1").value;
+    mydata.winddegend = document.getElementById("degree2").value;
     mydata.slopestart = document.getElementById("slope1").value;
     mydata.slopeend = document.getElementById("slope2").value;
     mydata.groundstart = document.getElementById("ground1").value;
@@ -100,6 +108,7 @@ function GetAnswer()
     mydata.curveend = document.getElementById("curve2").value;
     mydata.Aim = document.getElementById("aim").value;
     mydata.DiffRate = document.getElementById("datafrequency").value;
+    mydata.HWIMultiplier = document.getElementById("dis").value;
 
     if (document.getElementById("distancecheckbox").checked)
     {
@@ -113,36 +122,39 @@ function GetAnswer()
     {
         mydata.datatype = 2;
     }
-    else if (document.getElementById("slopecheckbox").checked)
+    else if (document.getElementById("degreecheckbox").checked)
     {
         mydata.datatype = 3;
     }
-    else if (document.getElementById("groundcheckbox").checked)
+    else if (document.getElementById("slopecheckbox").checked)
     {
         mydata.datatype = 4;
     }
-    else if (document.getElementById("spincheckbox").checked)
+    else if (document.getElementById("groundcheckbox").checked)
     {
         mydata.datatype = 5;
     }
-    else if (document.getElementById("curvecheckbox").checked)
+    else if (document.getElementById("spincheckbox").checked)
     {
         mydata.datatype = 6;
     }
+    else if (document.getElementById("curvecheckbox").checked)
+    {
+        mydata.datatype = 7;
+    }
 
+    //Set Var
+    mydata.dataloopcount = 0;
     switch (mydata.datatype)
     {
         case 0:
             // Distance
             {
-                for (i = 0; i < Math.Abs(Math.Floor(mydata.distanceend - mydata.distancestart)); i++)
+                for (i = 0; i < Math.Abs(Math.Floor((mydata.distanceend - mydata.distancestart)/(mydata.DiffRate))); i++)
                 {
                     let newdistance = mydata.distancestart + (i * mydata.DiffRate);
                     myanswer.distancelist.push(newdistance);
-                }
-                for (const distance of myanswer.distancelist)
-                {
-                    
+                    mydata.dataloopcount++;
                 }
                 break;
             }
@@ -150,14 +162,11 @@ function GetAnswer()
         case 1:
             // Height
             {
-                for (i = 0; i < Math.Abs(Math.Floor(mydata.heightend - mydata.heightstart)); i++)
+                for (i = 0; i < Math.Abs(Math.Floor((mydata.heightend - mydata.heightstart)/(mydata.DiffRate))); i++)
                 {
                     let newheight = mydata.heightstart + (i * mydata.DiffRate);
                     myanswer.heightlist.push(newheight);
-                }
-                for (const height of myanswer.heightlist)
-                {
-                    
+                    mydata.dataloopcount++;
                 }
                 break;
             }
@@ -165,49 +174,52 @@ function GetAnswer()
         case 2:
             // Wind
             {
-                for (i = 0; i < Math.Abs(Math.Floor(mydata.windend - mydata.windstart)); i++)
+                for (i = 0; i < Math.Abs(Math.Floor((mydata.windend - mydata.windstart)/(mydata.DiffRate))); i++)
                 {
                     let newwind = mydata.windstart + (i * mydata.DiffRate);
                     myanswer.windlist.push(newwind);
-                }
-                for (const wind of myanswer.windlist)
-                {
-                    
+                    mydata.dataloopcount++;
                 }
                 break;
             }
 
         case 3:
-            // Slope
+            // Wind Degree
             {
-                for (i = 0; i < Math.Abs(Math.Floor(mydata.slopeend - mydata.slopestart)); i++)
+                for (i = 0; i < Math.Abs(Math.Floor((mydata.winddegend - mydata.winddegstart)/(mydata.DiffRate))); i++)
                 {
-                    let newslope = mydata.slopestart + (i * mydata.DiffRate);
-                    myanswer.slopelist.push(newslope);
-                }
-                for (const slope of myanswer.slopelist)
-                {
-                    
+                    let newwinddeg = mydata.winddegstart + (i * mydata.DiffRate);
+                    myanswer.winddeglist.push(newwinddeg);
+                    mydata.dataloopcount++;
                 }
                 break;
             }
 
         case 4:
-            // Ground
+            // Slope
             {
-                for (i = 0; i < Math.Abs(Math.Floor(mydata.groundend - mydata.groundstart)); i++)
+                for (i = 0; i < Math.Abs(Math.Floor((mydata.slopeend - mydata.slopestart)/(mydata.DiffRate))); i++)
                 {
-                    let newground = mydata.groundstart + (i * mydata.DiffRate);
-                    myanswer.groundlist.push(newground);
-                }
-                for (const ground of myanswer.groundlist)
-                {
-                    
+                    let newslope = mydata.slopestart + (i * mydata.DiffRate);
+                    myanswer.slopelist.push(newslope);
+                    mydata.dataloopcount++;
                 }
                 break;
             }
 
         case 5:
+            // Ground
+            {
+                for (i = 0; i < Math.Abs(Math.Floor((mydata.groundend - mydata.groundstart)/(mydata.DiffRate))); i++)
+                {
+                    let newground = mydata.groundstart + (i * mydata.DiffRate);
+                    myanswer.groundlist.push(newground);
+                    mydata.dataloopcount++;
+                }
+                break;
+            }
+
+        case 6:
             // Spin
             {
                 for (i = 0; i < Math.Abs(Math.Floor(mydata.spinend - mydata.spinstart)); i++)
@@ -215,24 +227,16 @@ function GetAnswer()
                     let newspin = mydata.spinstart + (i * mydata.DiffRate);
                     myanswer.spinlist.push(newspin);
                 }
-                for (const spin of myanswer.spinlist)
-                {
-                    
-                }
                 break;
             }
 
-        case 6:
+        case 7:
             // Curve
             {
                 for (i = 0; i < Math.Abs(Math.Floor(mydata.curveend - mydata.curvestart)); i++)
                 {
                     let newcurve = mydata.curvestart + (i * mydata.DiffRate);
                     myanswer.curvelist.push(newcurve);
-                }
-                for (const curve of myanswer.curvelist)
-                {
-                    
                 }
                 break;
             }
@@ -243,8 +247,7 @@ function GetAnswer()
 }
 
 // Calculation Functions
-function calc(el) {
-
+function calc(mydata, myanswer) {
     let power = checkValidInput(document.getElementById('power').value);
     let auxpart_pwr = checkValidInput(document.getElementById('auxpart_pwr').value);
     let card_pwr = checkValidInput(document.getElementById('card_pwr').value);
@@ -269,61 +272,59 @@ function calc(el) {
 
     power_shot = POWER_SHOT_FACTORY[POWER_SHOT_FACTORY_ENUM[power_shot]];
 
-    let distance = checkValidInput(document.getElementById('distance').value);
-    let height = checkValidInput(document.getElementById('height').value);
-    let wind = checkValidInput(document.getElementById('wind').value);
-    let degree = checkValidInput(document.getElementById('degree').value);
-    let ground = checkValidInput(document.getElementById('ground').value)
-    let spin = checkValidInput(document.getElementById('spin').value);
-    let curve = checkValidInput(document.getElementById('curve').value);
-    let slope_break = checkValidInputSlope(document.getElementById('slope_break').value);
-    let dis = checkValidInput(document.getElementById('dis').value);
-    let aim = checkValidInputSlope(document.getElementById('aim').value);
+    for (i = 0; i < mydata.dataloopcount; i++)
+    {
+        let distance = checkValidInput(myanswer.distancelist.at(i) ?? mydata.distancestart);
+        let height = checkValidInput(myanswer.heightlist.at(i) ?? mydata.heightstart);
+        let wind = checkValidInput(myanswer.windlist.at(i) ?? mydata.windstart);
+        let degree = checkValidInput(myanswer.winddeglist.at(i) ?? mydata.winddegstart);
+        let ground = checkValidInput(myanswer.groundlist.at(i) ?? mydata.groundstart);
+        let spin = checkValidInput(myanswer.spinlist.at(i) ?? mydata.spinstart);
+        let curve = checkValidInput(myanswer.curvelist.at(i) ?? mydata.curvestart);
+        let slope_break = checkValidInputSlope(myanswer.slopelist.at(i) ?? mydata.slopestart);
+        let dis = checkValidInput(document.getElementById('dis').value);
+        let aim = checkValidInputSlope(mydata.HWIMultiplier);
 
-    // 100 % ground
-    if (ground == 0.0)
-        ground = 100.0;
+        // 100 % ground
+        // if (ground == 0.0)
+        //    ground = 100.0;
 
-    let result = document.getElementById('result');
-    let result2 = document.getElementById('result');
+        let result = document.getElementById('result');
 
-    // Make options
-    const input_values = {
-        power_player: {
-            pwr: power,
-            options: {
-                auxpart: auxpart_pwr,
-                mascot: mascot_pwr,
-                card: card_pwr,
-                ps_auxpart: 0,
-                ps_mascot: 0,
-                ps_card: card_ps_pwr,
-                total: function(option) {
-                    
-                    let pwr = this.auxpart + this.mascot + this.card;
-
-                    if (option == 1 || option == 2 || option == 3)
-                        pwr += this.ps_auxpart + this.ps_mascot + this.ps_card;
-
-                    return pwr;
+        // Make options
+        const input_values = {
+            power_player: {
+                pwr: power,
+                options: {
+                    auxpart: auxpart_pwr,
+                    mascot: mascot_pwr,
+                    card: card_pwr,
+                    ps_auxpart: 0,
+                    ps_mascot: 0,
+                    ps_card: card_ps_pwr,
+                    total: function(option) {
+                        let pwr = this.auxpart + this.mascot + this.card;
+                        if (option == 1 || option == 2 || option == 3)
+                            pwr += this.ps_auxpart + this.ps_mascot + this.ps_card;
+                            return pwr;
+                    }
                 }
-            }
-        },
-        club_info: club,
-        shot: shot,
-        power_shot: power_shot,
-        distance: distance,
-        height: height,
-        wind: wind,
-        degree: degree,
-        ground: ground,
-        spin: spin,
-        curva: curve,
-        slope: slope_break
-    };
+            },
+            club_info: club,
+            shot: shot,
+            power_shot: power_shot,
+            distance: distance,
+            height: height,
+            wind: wind,
+            degree: degree,
+            ground: ground,
+            spin: spin,
+            curva: curve,
+            slope: slope_break
+        };
 
-    // Calc
-    const found = find_power(   input_values.power_player,
+        // Calc
+        const found = find_power(input_values.power_player,
                                 input_values.club_info,
                                 input_values.shot,
                                 input_values.power_shot,
@@ -336,64 +337,49 @@ function calc(el) {
                                 input_values.curva,
                                 input_values.slope);
 
-    let f = [found];
-    let index_f = 0;
+        let f = [found];
+        let index_f = 0;
 
-    if (found.power != -1) {
+        if (found.power != -1) {
+            do {
+                index_f++;
+                f.push
+                (
+                    find_power
+                    (   
+                        input_values.power_player,
+                        input_values.club_info,
+                        input_values.shot,
+                        input_values.power_shot,
+                        input_values.distance, 
+                        input_values.height, 
+                        input_values.wind, 
+                        input_values.degree, 
+                        input_values.ground, 
+                        input_values.spin, 
+                        input_values.curva, 
+                        input_values.slope,
+                        Math.atan2(f[index_f - 1].desvio * 1.5, input_values.distance), 
+                        f[index_f - 1].power
+                    )
+                );
 
-        do {
+            } while (f[index_f].power != -1 && f[index_f -1].power != -1 && Math.abs(f[index_f - 1].desvio - f[index_f].desvio) >= 0.00001);
+        }
 
-            index_f++;
+        if (f[index_f].power != -1) {
 
-            f.push
-            (
-                find_power
-                (   
-                    input_values.power_player,
-                    input_values.club_info,
-                    input_values.shot,
-                    input_values.power_shot,
-                    input_values.distance, 
-                    input_values.height, 
-                    input_values.wind, 
-                    input_values.degree, 
-                    input_values.ground, 
-                    input_values.spin, 
-                    input_values.curva, 
-                    input_values.slope,
-                    Math.atan2(f[index_f - 1].desvio * 1.5, input_values.distance), 
-                    f[index_f - 1].power
-                )
-            );
-
-        } while (f[index_f].power != -1 && f[index_f -1].power != -1 && Math.abs(f[index_f - 1].desvio - f[index_f].desvio) >= 0.05);
-    }
-
-    if (f[index_f].power != -1) {
-
-        result.color = 'Green';
-        result.innerHTML = `
-	<text style="color:Pink"><text style="font-size:16px">
-		Power : ${(f[index_f].power * 100).toFixed(3)}%
-	</text><br>
-	<text style="color:Pink"><text style="font-size:16px">
-		HWI : ${(desvioByDegree(f[index_f].desvio, distance) / 0.2167).toFixed(4)} pb
-	</text><br>
-	<text style="color:Pink"><text style="font-size:16px">
-		AIM : ${(((desvioByDegree(f[index_f].desvio, distance) / 0.2167) * dis ) / aim ).toFixed(4)} aim
-	</text><br>
-    <text style="color:Pink"><text style="font-size:16px">
-		Shot Power : ${(f[index_f].power_range * f[index_f].power).toFixed(3)}y
-	</text><br><br>
-	<text style="color:Pink"><text style="font-size:16px">
-		Pre Calip = ${(Math.floor(f[index_f].power/(1/360))*(1/360)*f[index_f].power_range).toFixed(1)}y
-	</text><br>
-	<text style="color:Pink"><text style="font-size:16px">
-		Next Calip = ${(Math.ceil(f[index_f].power/(1/360))*(1/360)*f[index_f].power_range).toFixed(1)}y
-	</text><br>`;
-
-    }else {
-        result.color = 'Red'
-        result.innerHTML = 'ไม่สามารถจำลองการตีได้ ลองตรวจสอบค่าที่ป้อน'
+        }
     }
 }
+
+function checkValidInput(value) {
+    if (value == null || value.trim() === '')
+        return 0;
+
+    const number = Number(value);
+
+    return Number.isNaN(number) ? 0 : number;
+}
+
+// Class Function

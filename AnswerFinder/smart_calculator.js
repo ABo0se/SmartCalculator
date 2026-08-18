@@ -1260,7 +1260,8 @@ function calc(el) {
 
         // AIM = 0 IS ALREADY CONVERGED
 
-        if (Math.abs(baseGap) < AIM_CONVERGE_THRESHOLD) {
+        if (Math.abs(baseGap) < AIM_CONVERGE_THRESHOLD) 
+        {
         alert(
             `"OK!"\n` +
             `aim = 0\n` +
@@ -1268,6 +1269,7 @@ function calc(el) {
             `desvio = ${f[0].desvio}\n` +
             `gap = ${baseGap}`
         );
+        index_f = f.length - 1;
         } 
         else 
         {
@@ -1364,6 +1366,7 @@ function calc(el) {
                         }
                     } 
                     warmPower = r.power; 
+                    index_f = f.length - 1;
                     const gap = fixedPointGap(r, midAim); 
  
                     if (Math.abs(gap) < AIM_CONVERGE_THRESHOLD)

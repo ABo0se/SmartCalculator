@@ -1,7 +1,7 @@
 // Arquivo smart_calculator.js
 // Criado em 31/08/2020 as 18:21 por Acrisio
 // Algoritmo que calcula o lançamento obliquo com resistência do meio e o efeito magnus.
-// Obtido atraves de engenharia reversa do pangya. 
+// Obtido atraves de engenharia reversa do pangya.
 
 const DESVIO_SCALE_PANGYA_TO_YARD = 0.3125 / 1.5;
 
@@ -85,13 +85,13 @@ class Vector3D {
     cross(vector3d) {
 
         let x = this.x, y = this.y, z = this.z;
-    
+
         this.x = y * vector3d.z - z * vector3d.y;
         this.y = z * vector3d.x - x * vector3d.z;
         this.z = x * vector3d.y - y * vector3d.x;
-    
+
         return this;
-    
+
       }
 
     length() {
@@ -156,16 +156,16 @@ class Ball {
     ball_30 = 0.0;
 
     curva = 0.0;
-    spin = 0.0; 
+    spin = 0.0;
 
     rotation_curve = 0.0;
-    rotation_spin = 0.0; 
+    rotation_spin = 0.0;
 
     // Flags
-    ball_44 = 0;    
-    ball_48 = 0;    
-    ball_70 = -1; 
-    ball_90 = 0;  
+    ball_44 = 0;
+    ball_48 = 0;
+    ball_70 = -1;
+    ball_90 = 0;
 
     ball_BC = 0;
 
@@ -346,7 +346,7 @@ class Club {
             }
             case CLUB_TYPE.IRON: {
 
-                pwrjard = ((getPowerShotFactory(ps) / this.power_base + 1.0) * this.power_factor) + 
+                pwrjard = ((getPowerShotFactory(ps) / this.power_base + 1.0) * this.power_factor) +
                 (extraPower.total(ps) * this.power_factor * 1.3) / this.power_base;
 
                 break;
@@ -361,15 +361,15 @@ class Club {
                     case TYPE_DISTANCE.LESS_10:
                     case TYPE_DISTANCE.LESS_15:
                     case TYPE_DISTANCE.LESS_28:
-                        pwrjard = (getPowerByDegree(this.getDregRad(), spin) * (52.0 + (ps ? 28.0 : 0))) + 
+                        pwrjard = (getPowerByDegree(this.getDregRad(), spin) * (52.0 + (ps ? 28.0 : 0))) +
                         (extraPower.total(ps) * this.power_factor) / this.power_base;
                         break;
                     case TYPE_DISTANCE.LESS_58:
-                        pwrjard = (getPowerByDegree(this.getDregRad(), spin) * (80.0 + (ps ? 18.0 : 0))) + 
+                        pwrjard = (getPowerByDegree(this.getDregRad(), spin) * (80.0 + (ps ? 18.0 : 0))) +
                         (extraPower.total(ps) * this.power_factor) / this.power_base;
                         break;
                     case TYPE_DISTANCE.BIGGER_OR_EQUAL_58:
-                        pwrjard = ((getPowerShotFactory(ps) / this.power_base + 1.0) * this.power_factor) + 
+                        pwrjard = ((getPowerShotFactory(ps) / this.power_base + 1.0) * this.power_factor) +
                         (extraPower.total(ps) * this.power_factor) / this.power_base;
                         break;
                 }
@@ -400,7 +400,7 @@ class Club {
     }
 
     getRange(extraPower, pwrSlot, ps) {
-        
+
         let pwr_range = this.power_base + extraPower.total(ps) + getPowerShotFactory(ps);
 
         if (this.type == CLUB_TYPE.WOOD)
@@ -483,12 +483,6 @@ class QuadTree {
         return this.gravity * this.gravityFactor;
     }
 
-    ball = undefined;
-
-    club = undefined;
-
-    wind = undefined;
-
     // Usa no cobra
     ball_position_init = new Vector3D(0.0, 0.0, 0.0);
     power_range_shot = 0.0;
@@ -521,8 +515,8 @@ class QuadTree {
         // Type distance
         this.club.type_distance = calculeTypeDistance(options.distance);
 
-        // init max_height
-        this.ball.max_height = this.ball.position.y;
+        // init max_height (tracked from the ball's lower bound, not its center)
+        this.ball.max_height = this.ball.position.y - (this.ball.diametro / 2);
 
         this.ball.count = 0;
         this.ball.num_max_height = -1;
@@ -576,7 +570,7 @@ class QuadTree {
 
         // Rotação eixo X, Z
         this.ball.rotation_curve = this.ball.curva * options.percentShot;
-        this.ball.rotation_spin = this.club.type_distance == TYPE_DISTANCE.BIGGER_OR_EQUAL_58 
+        this.ball.rotation_spin = this.club.type_distance == TYPE_DISTANCE.BIGGER_OR_EQUAL_58
             ? (this.club.getPower2(options.power.options, options.power.pwr, options.ps) * options.percentShot) * options.percentShot
             : 0.0;
 
@@ -663,7 +657,7 @@ class QuadTree {
             obj._2C = 0.0;
 
         }else if (option == 1) {
-        
+
             obj.cos = Math.cos(degree);
             obj.rad = 0.0; // degree
             obj.sin = Math.sin(degree);
@@ -705,7 +699,7 @@ class QuadTree {
 
                 // 1W, 2W e 3W
                 let power_multiply = 0.0;
-                
+
                 if (this.club.type == CLUB_TYPE.WOOD) {
 
                     switch (this.club.power_base) {
@@ -752,7 +746,7 @@ class QuadTree {
             }
 
             if (this.shot == SHOT_TYPE.SPIKE && this.ball.num_max_height >= 0 && (this.ball.num_max_height + 0x3C) < this.ball.count && this.spike_med < 0) {
-                
+
                 this.spike_med = this.ball.count;
 
                 if (this.club.type == CLUB_TYPE.WOOD) {
@@ -819,13 +813,13 @@ class QuadTree {
 
         if (this.ball.velocity.y < 0 && this.ball.num_max_height < 0) {
 
-            this.ball.max_altura = this.ball.position.y;
+            this.ball.max_height = this.ball.position.y - (this.ball.diametro / 2);
             this.ball.num_max_height = this.ball.count;
         }
-        
+
         this.ball.count++;
     }
-    
+
     bounceProcess(steptime, final = undefined) {
 
         if (this.shot == SHOT_TYPE.SPIKE && this.ball.num_max_height >= 0 && (this.ball.num_max_height + 0x3C) > this.ball.count)
@@ -887,7 +881,7 @@ class QuadTree {
             retVect.y = retVect.y + (this.club.rotation_spin * _00D66CF8 * this.ball.rotation_spin);
 
         let velVect = this.ball.velocity.clone();
-        
+
         velVect.multiplyScalar(velVect.length() * _00D3D028);
 
         retVect.sub(velVect);
@@ -905,8 +899,15 @@ const find_power = (power_player, club_info, shot, power_shot, distancia, altura
 
     const altura_colision = altura * 1.094 * 3.2;
     const distanciaScale = distancia * 3.2;
-    var vball = new Ball();
+    const vball = new Ball();
     const vclub = club;
+
+    // The engine tracks the ball's center (position.y), but a shot should be considered
+    // to have reached the target's elevation once the ball's *lower edge* touches it, not
+    // its center. Offsetting the threshold upward by the ball's radius makes the center-based
+    // crossing check equivalent to a lower-bound (bottom of hitbox) crossing check.
+    const ball_radius = vball.diametro / 2;
+    const altura_colision_center = altura_colision + ball_radius;
 
     // init Club Info
     if (club != undefined)
@@ -918,7 +919,7 @@ const find_power = (power_player, club_info, shot, power_shot, distancia, altura
     let slope_mira_rad = 0.0;
 
     if (slope instanceof Vector3D) {
-        
+
         slope_mira_rad = slope.y;
         vball.slope = slope.clone();
 
@@ -960,10 +961,10 @@ const find_power = (power_player, club_info, shot, power_shot, distancia, altura
                 ps_mascot: 0,
                 ps_card: 8,
                 total: function(option) {
-                    
+
                     let pwr = this.auxpart + this.mascot + this.card;
 
-                    if (option == 1 || option == 2 || options == 3)
+                    if (option == 1 || option == 2 || option == 3)
                         pwr += this.ps_auxpart + this.ps_mascot + this.ps_card;
 
                     return pwr;
@@ -985,7 +986,7 @@ const find_power = (power_player, club_info, shot, power_shot, distancia, altura
             copy_ball.copy(vball);
 
             qt.ballProcess(_00D083A0);
-    
+
         }while((vball.position.y > altura_colision || vball.num_max_height == -1) && (count++) < limit_checking)
 
         // If the ball never actually got above altura_colision, this shot definitively
@@ -1009,10 +1010,10 @@ const find_power = (power_player, club_info, shot, power_shot, distancia, altura
         vball.copy(copy_ball);
 
         qt.ballProcess(_00D083A0, _00D083A0 * last_step);
-        
+
         if (Math.abs(distanciaScale - vball.position.z) <= margin)
             return 0;
-        
+
         return distanciaScale - vball.position.z;
     }
 
@@ -1032,7 +1033,7 @@ const find_power = (power_player, club_info, shot, power_shot, distancia, altura
 
         qt.initShot(vball, vclub, wind, options);
 
-        ret = findAlturaColision(qt, altura_colision);
+        ret = findAlturaColision(qt, altura_colision_center);
 
         if (ret == 0) {
             isFind = true;
@@ -1086,10 +1087,17 @@ const find_power = (power_player, club_info, shot, power_shot, distancia, altura
 function simulate_shot(power_player, club_info, shot, power_shot, altura, vento, angulo, terreno, spin, curva, slope, percentShot) {
 
     const simulate = (distanceEstimate) => {
-        const altura_colision = altura * 1.094 * 3.2;
+        const altura_colision_raw = altura * 1.094 * 3.2;
         const vball = new Ball();
         const vclub = club;
         const wind = new Wind();
+
+        // The engine tracks the ball's center (position.y), but a shot should be considered
+        // to have reached the target's elevation once the ball's *lower edge* touches it, not
+        // its center. Offsetting the threshold upward by the ball's radius makes the center-based
+        // crossing check equivalent to a lower-bound (bottom of hitbox) crossing check.
+        const ball_radius = vball.diametro / 2;
+        const altura_colision = altura_colision_raw + ball_radius;
 
         if (club != undefined)
             vclub.init(club_info);
@@ -1277,34 +1285,29 @@ function calc(el) {
     let dis = checkValidInput(document.getElementById('dis').value);
     let aim = checkValidInput(document.getElementById('aim').value);
 
-
     let power_percent = 0.0;
 
-        // Convert input in yards into a normalized power percent using the selected club range
-        const tempClub = new Club();
-        tempClub.init(club);
-        tempClub.type_distance = calculeTypeDistance(power_used);
-        const club_range = tempClub.getRange({
-            auxpart: auxpart_pwr,
-            mascot: mascot_pwr,
-            card: card_pwr,
-            ps_auxpart: 0,
-            ps_mascot: 0,
-            ps_card: card_ps_pwr,
-            total: function(option) {
-                let pwr = this.auxpart + this.mascot + this.card;
-                if (option == 1 || option == 2 || option == 3)
-                    pwr += this.ps_auxpart + this.ps_mascot + this.ps_card;
-                return pwr;
-            }
-        }, power, power_shot);
+    // Convert input in yards into a normalized power percent using the selected club range
+    const tempClub = new Club();
+    tempClub.init(club);
+    tempClub.type_distance = calculeTypeDistance(power_used);
+    const club_range = tempClub.getRange({
+        auxpart: auxpart_pwr,
+        mascot: mascot_pwr,
+        card: card_pwr,
+        ps_auxpart: 0,
+        ps_mascot: 0,
+        ps_card: card_ps_pwr,
+        total: function(option) {
+            let pwr = this.auxpart + this.mascot + this.card;
+            if (option == 1 || option == 2 || option == 3)
+                pwr += this.ps_auxpart + this.ps_mascot + this.ps_card;
+            return pwr;
+        }
+    }, power, power_shot);
 
-        if (club_range > 0)
-            power_percent = power_used / club_range;
-
-    // 100 % ground
-    // if (ground == 0.0)
-    //    ground = 100.0;
+    if (club_range > 0)
+        power_percent = power_used / club_range;
 
     let result = document.getElementById('result');
 
@@ -1320,7 +1323,7 @@ function calc(el) {
                 ps_mascot: 0,
                 ps_card: card_ps_pwr,
                 total: function(option) {
-                    
+
                     let pwr = this.auxpart + this.mascot + this.card;
 
                     if (option == 1 || option == 2 || option == 3)
@@ -1437,7 +1440,7 @@ function anglecalc4(value) {
 
     const angle90 = checkValidInput(document.querySelector('#degree90').value);
 
-    angle360 = 360 - angle90;
+    const angle360 = 360 - angle90;
 
     document.getElementById('degree').value = angle360.toFixed(2);
 
@@ -1527,9 +1530,9 @@ function smartDesvio(smartData) {
     let powerRange = 230;
 
     for (let i = 12; i >= 0; --i) {
-        
+
         smartData.club.init(CLUB_INFO[CLUB_INFO_ENUM[i]]);
-        
+
         powerRange = smartData.club.getRange(smartData.options.power.options, smartData.options.power.pwr, smartData.options.ps);
 
         pb_sample = (yards / YARDS_TO_PB) / ((powerRange * 3.2 * 1.4 - smartData.altura) * 0.0625)
@@ -1537,6 +1540,6 @@ function smartDesvio(smartData) {
         if (Math.abs(pb_sample) <= MAX_PB)
             return `${pb_sample.toFixed(4)}pba${powerRange}`
     }
-    
+
     return `${pb_sample.toFixed(4)}pba${powerRange}`
 }

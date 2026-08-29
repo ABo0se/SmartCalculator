@@ -1259,13 +1259,13 @@ function calc(el) {
 
         if (Math.abs(baseGap) < AIM_CONVERGE_THRESHOLD)
         {
-        alert(
-            `"OK!"\n` +
-            `aim = 0\n` +
-            `power = ${f[0].power}\n` +
-            `desvio = ${f[0].desvio}\n` +
-            `gap = ${baseGap}`
-        );
+        // alert(
+        //     `"OK!"\n` +
+        //     `aim = 0\n` +
+        //     `power = ${f[0].power}\n` +
+        //     `desvio = ${f[0].desvio}\n` +
+        //     `gap = ${baseGap}`
+        // );
         index_f = f.length - 1;
         }
         else
@@ -1353,12 +1353,12 @@ function calc(el) {
                         if (!rescued)
                         {
                             f[index_f].power = -1;
-                            alert(
-                                `EXIT: midpoint and full rescue scan failed\n` +
-                                `loAim = ${loAim}\n` +
-                                `hiAim = ${hiAim}\n` +
-                                `midAim = ${midAim}`
-                            );
+                            // alert(
+                            //     `EXIT: midpoint and full rescue scan failed\n` +
+                            //     `loAim = ${loAim}\n` +
+                            //     `hiAim = ${hiAim}\n` +
+                            //     `midAim = ${midAim}`
+                            // );
                             break;
                         }
                     }
@@ -1368,42 +1368,42 @@ function calc(el) {
 
                     if (Math.abs(gap) < AIM_CONVERGE_THRESHOLD)
                     {
-                        alert(
-                            `"OK!"\n` +
-                            `iteration = ${i}\n` +
-                            `aim = ${midAim}\n` +
-                            `power = ${r.power}\n` +
-                            `desvio = ${r.desvio}\n` +
-                            `gap = ${gap}`
-                        );
+                        // alert(
+                        //     `"OK!"\n` +
+                        //     `iteration = ${i}\n` +
+                        //     `aim = ${midAim}\n` +
+                        //     `power = ${r.power}\n` +
+                        //     `desvio = ${r.desvio}\n` +
+                        //     `gap = ${gap}`
+                        // );
                         break;
                     }
                     if (Math.sign(gap) === Math.sign(loGap))
                     {
                         loAim = midAim;
                         loGap = gap;
-                        alert(
-                            `iteration = ${i}\n` +
-                            `lo side\n` +
-                            `aim = ${midAim}\n` +
-                            `power = ${r.power}\n` +
-                            `desvio = ${r.desvio}\n` +
-                            `gap = ${gap}\n` +
-                            `width = ${Math.abs(hiAim - loAim)}`
-                        );
+                        // alert(
+                        //     `iteration = ${i}\n` +
+                        //     `lo side\n` +
+                        //     `aim = ${midAim}\n` +
+                        //     `power = ${r.power}\n` +
+                        //     `desvio = ${r.desvio}\n` +
+                        //     `gap = ${gap}\n` +
+                        //     `width = ${Math.abs(hiAim - loAim)}`
+                        // );
                     }
                     else
                     {
                         hiAim = midAim;
-                        alert(
-                            `iteration = ${i}\n` +
-                            `hi side\n` +
-                            `aim = ${midAim}\n` +
-                            `power = ${r.power}\n` +
-                            `desvio = ${r.desvio}\n` +
-                            `gap = ${gap}\n` +
-                            `width = ${Math.abs(hiAim - loAim)}`
-                        );
+                        // alert(
+                        //     `iteration = ${i}\n` +
+                        //     `hi side\n` +
+                        //     `aim = ${midAim}\n` +
+                        //     `power = ${r.power}\n` +
+                        //     `desvio = ${r.desvio}\n` +
+                        //     `gap = ${gap}\n` +
+                        //     `width = ${Math.abs(hiAim - loAim)}`
+                        // );
                     }
                 }
             }
@@ -1411,11 +1411,11 @@ function calc(el) {
             {
                 // Invalid
                 f[index_f].power = -1;
-                alert(
-                    `"No AIM found from candidates!"\n` +
-                    `baseAim = 0\n` +
-                    `baseGap = ${baseGap}`
-                );
+                // alert(
+                //     `"No AIM found from candidates!"\n` +
+                //     `baseAim = 0\n` +
+                //     `baseGap = ${baseGap}`
+                // );
             }
         }
     }

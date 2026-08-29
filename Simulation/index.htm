@@ -34,13 +34,13 @@
 
 		.label {
 			grid-column: 1 / 2;
-			color:pink;
+			color: pink;
 		}
 
 		.input {
 			grid-column: 2 / 3;
 		}
-		
+
 		.container-grid {
 			display: grid;
 			grid-template-columns: auto 120px auto;
@@ -48,20 +48,32 @@
 			grid-column-gap: 10px;
 			margin-bottom: 10px;
 		}
+
 		.LeftCorner {
-    		position: absolute;
-    		top: 10;
-    		left: 10;
+			position: absolute;
+			top: 10;
+			left: 10;
 		}
 
 		.ButtonContext {
-    		font-size: 16px;
-    		color: black;
-    		margin: 5px;
-    		padding: 8px 16px;
-    		background-color: pink;
-    		text-decoration: none;
-    		border-radius: 4px;
+			font-size: 16px;
+			color: black;
+			margin: 5px;
+			padding: 8px 16px;
+			background-color: pink;
+			text-decoration: none;
+			border-radius: 4px;
+		}
+
+		.mega-title {
+			font-size: 49px;
+			font-family: 'Bahnschrift';
+			color: white;
+		}
+
+		.section-header {
+			color: pink;
+			font-size: 18px;
 		}
 	</style>
 	<script>
@@ -90,34 +102,33 @@
 </head>
 
 <body style="background-color: rgb(66, 0, 100);">
-		<div class="LeftCorner">
-		<a class="ButtonContext"  href="../index.html">
-            🏠︎ กลับหน้าหลัก
-    	</a>
-		<a class="ButtonContext"  href="../DataExporter/index.htm">
-            ↔ สลับโหมด 
-    	</a>
+	<div class="LeftCorner">
+		<a class="ButtonContext" href="../index.html">
+			🏠︎ กลับหน้าหลัก
+		</a>
+		<a class="ButtonContext" href="../DataExporter/index.htm">
+			↔ สลับโหมด
+		</a>
 	</div>
 	<div id="display-container" style="display: flex; align-items: center; flex-direction: column;">
 		<h1 style="margin-bottom: 20px;">
-			<b><text style="font-size:49px;font-family:'Bahnschrift' ;color:white";>Simulator
-			</b></text>
+			<b class="mega-title">Simulator</b>
 		</h1>
 		<div style="display: flex; flex-direction: column; align-items: center;">
 			<div id="wedegt-config" style="display: flex; flex-direction: column; z-index: 10; padding: 10px">
 				<div>
-					<label style="color:pink"><span style="font-size:18px"><b>Client config</b></span></label>
+					<label class="section-header"><b>Client config</b></label>
 					<button id="toggleView" onclick="toggleView(this)">Hide</button>
 					<div class="container-grid" style="padding-top: 10px; grid-template-columns: auto 120px auto;">
-				<label class="label" style="color:pink">จอ: </label><select class="input" id="dis">
-					<option value="1">PB BIG</option>
-					<option value="1">800x600</option>
-					<option value="1.25">800x600 pb เล็ก</option>
-					<option value="1.5">1280x720</option>
-					<option value="1.875">1600x900</option>
-				</select>
+						<label class="label">จอ: </label><select class="input" id="dis">
+							<option value="1">PB BIG</option>
+							<option value="1">800x600</option>
+							<option value="1.25">800x600 pb เล็ก</option>
+							<option value="1.5">1280x720</option>
+							<option value="1.875">1600x900</option>
+						</select>
 					</div><br>
-					<label style="color:pink"><span style="font-size:18px"><center><b>Character status</b></center></span></label>
+					<label class="section-header" style="text-align:center; display:block;"><b>Character status</b></label>
 					<div class="container-grid" style="padding-top: 10px;">
 						<label class="label">Power รวม :</label>
 						<input class="input" id="power" type="text" value="37">
@@ -132,45 +143,44 @@
 						<label class="label">ระยะไม้ของคุณ =</label>
 						<input class="output" id="current_drive" type="text" style="color:Red">
 					</div>
-						<div style="display: grid; grid-template-columns: 70px 120px auto;">
+					<div style="display: grid; grid-template-columns: 70px 120px auto;">
 						<button style="width: 250px; height: 50px" onClick="checkdrive(this)"><b><span style="color:Red; font-size:20px">เช็คระยะไม้</span></b></button>
+					</div>
 				</div>
-			</div>
-		
 
-			<label style="color:pink"><br><span style="font-size:18px"><center><b>Calculator ZONE</b></center></span></label>
-			<div class="container-grid" style="padding-top: 10px;">
-				<label class="label">เลือกไม้ : </label><select class="input" id="club">
-					<option value="0">1W</option>
-					<option value="1">2W</option>
-					<option value="2">3W</option>
-					<option value="3">2I</option>
-					<option value="4">3I</option>
-					<option value="5">4I</option>
-					<option value="6">5I</option>
-					<option value="7">6I</option>
-					<option value="8">7I</option>
-					<option value="9">8I</option>
-					<option value="10">9I</option>
-					<option value="11">PW</option>
-					<option value="12">SW</option>
-				</select>
-				<label class="label">เลือกท่าตี : </label><select class="input" id="shot">
-					<option value="0">Dunk</option>
-					<option value="1">Tomahawk</option>
-					<option value="2">Spike</option>
-					<option value="3">Cobra</option>
-				</select>
-				<label class="label">จำนวนเกจ : </label><select class="input" id="power_shot">
-				<option value="0">Normal Shot</option>
-				<option value="1">1 Power Shot</option>
-				<option value="2">2 Power Shot</option>
-				<option value="3">15y Power Shot</option>
-				</select>
-			</div>
+				<label class="section-header" style="text-align:center; display:block;"><br><b>Calculator ZONE</b></label>
+				<div class="container-grid" style="padding-top: 10px;">
+					<label class="label">เลือกไม้ : </label><select class="input" id="club">
+						<option value="0">1W</option>
+						<option value="1">2W</option>
+						<option value="2">3W</option>
+						<option value="3">2I</option>
+						<option value="4">3I</option>
+						<option value="5">4I</option>
+						<option value="6">5I</option>
+						<option value="7">6I</option>
+						<option value="8">7I</option>
+						<option value="9">8I</option>
+						<option value="10">9I</option>
+						<option value="11">PW</option>
+						<option value="12">SW</option>
+					</select>
+					<label class="label">เลือกท่าตี : </label><select class="input" id="shot">
+						<option value="0">Dunk</option>
+						<option value="1">Tomahawk</option>
+						<option value="2">Spike</option>
+						<option value="3">Cobra</option>
+					</select>
+					<label class="label">จำนวนเกจ : </label><select class="input" id="power_shot">
+						<option value="0">Normal Shot</option>
+						<option value="1">1 Power Shot</option>
+						<option value="2">2 Power Shot</option>
+						<option value="3">15y Power Shot</option>
+					</select>
+				</div>
 				<div>
-					<label style="color:pink"><br><br><span style="font-size:18px"><b>Mycella Slope Formula</b></span></label>
-					<button id="toggleView" onclick="toggleView(this)">Hide</button>
+					<label class="section-header"><br><br><b>Mycella Slope Formula</b></label>
+					<button id="toggleView2" onclick="toggleView(this)">Hide</button>
 					<div id="mycella" class="container-grid" style="padding-top: 10px;">
 						<label class="label">ตัวคูณเอียง:</label>
 						<input class="input" id="x-slope" type="text">
@@ -184,52 +194,53 @@
 							<option value="-1">-</option>
 						</select>
 						<input type="reset" value="Cal" onClick="calcMycella(this)">
-					</div>	
+					</div>
 				</div>
 
-			<div>
-					<label style="color:pink"><br><br><span style="font-size:18px"><center><b>คำนวนองศาลม</b></center></span></label>
+				<div>
+					<label class="section-header" style="text-align:center; display:block;"><br><br><b>คำนวนองศาลม</b></label>
 					<div id="anglecalc" class="container-grid" style="padding-top: 10px">
-						<label id="anglecalc" class="label" style="color:pink">ใส่องศาแบบ 90 : </label>
+						<label class="label">ใส่องศาแบบ 90 : </label>
 						<input class="input" id="degree90" type="text"><br>
 						<button onClick="anglecalc1(this)">◤</button>
 						<button onClick="anglecalc4(this)">◥</button><br>
 						<button onClick="anglecalc2(this)">◣</button>
 						<button onClick="anglecalc3(this)">◢</button>
 					</div>
-			</div>	
+				</div>
 
-		<form>
-			<div class="container-grid"><br>
-				<label class="label">Power Used (y) : </label>
-				<input class="input" id="power_used" type="text">
-				<label class="label">หลุมสูงต่ำ : </label>
-				<input class="input" id="height" type="text">
-				<label class="label">แรงลม : </label>
-				<input class="input" id="wind" type="text">
-				<label class="label">องศาลม : </label>
-				<input class="input" id="degree" type="text">
-				<label class="label">ลูกเอียง : </label>
-				<input class="input" id="slope_break" type="text">
-				<label class="label">เอฟเฟคลูก : </label>
-				<input class="input" id="ground" value="100" type="text">
-				<label class="label">สปิน : </label>
-				<input class="input" id="spin" type="text">
-				<label class="label">เคิฟ : </label>
-				<input class="input" id="curve" type="text">
-				<label class="label">Aim : </label>
-				<input class="input" id="aim" value="4" type="text">
-				<input type="reset" value="เคลียร์" name="data">
+				<form>
+					<div class="container-grid"><br>
+						<label class="label">Power Used (y) : </label>
+						<input class="input" id="power_used" type="text">
+						<label class="label">หลุมสูงต่ำ : </label>
+						<input class="input" id="height" type="text">
+						<label class="label">แรงลม : </label>
+						<input class="input" id="wind" type="text">
+						<label class="label">องศาลม : </label>
+						<input class="input" id="degree" type="text">
+						<label class="label">ลูกเอียง : </label>
+						<input class="input" id="slope_break" type="text">
+						<label class="label">เอฟเฟคลูก : </label>
+						<input class="input" id="ground" value="100" type="text">
+						<label class="label">สปิน : </label>
+						<input class="input" id="spin" type="text">
+						<label class="label">เคิฟ : </label>
+						<input class="input" id="curve" type="text">
+						<label class="label">Aim : </label>
+						<input class="input" id="aim" value="4" type="text">
+						<input type="reset" value="เคลียร์" name="data">
+					</div>
+				</form>
+				<div style="display: grid; grid-template-columns: 90px 120px auto;">
+					<button style="width: 250px; height: 40px" onClick="calc(this)"><b><span style="color:Green; font-size:24px">Calculate</span></b></button>
+				</div>
 			</div>
-		</form>
-		<div style="display: grid; grid-template-columns: 90px 120px auto;">
-			<button style="width: 250px; height: 40px" onClick="calc(this)"><b><span style="color:Green; font-size:24px">Calculate</span></b></button>
+			<span style="margin-top: 5px;">
+				<font id="result"></font><br>
+			</span>
+			<center><div style="padding: 10px; font-size: 10px; color:pink"><b>Developed by Acrisio SuperSS Dev</b></div></center>
 		</div>
-		</div>
-		<span style="margin-top: 5px;">
-			<font id="result"></font><br>
-		</span>
-		<center><rodape style="padding: 10px; font-size: 10px; color:pink"><b>Developed by Acrisio SuperSS Dev<b></rodape></center>
 	</div>
 	<script src="smart_calculator.js"></script>
 </body>

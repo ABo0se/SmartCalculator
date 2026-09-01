@@ -129,10 +129,6 @@ function calculeTypeDistance(distance) {
     return type;
 }
 
-function calculeTypeDistanceByPosition(position1, position2) {
-    return calculeTypeDistance(Math.sqrt(Math.pow(position1.x - position2.x) + Math.pow(position1.z - position2.z)) * 0.3125);
-}
-
 // JP Base ball Static Object
 class Ball {
 
@@ -891,10 +887,6 @@ class QuadTree {
     }
 }
 
-const diffYZ = function(vect1, vect2) {
-    return Math.sqrt(Math.pow(vect1.x - vect2.x, 2) + Math.pow(vect1.z - vect2.z, 2));
-};
-
 const find_power = (power_player, club_info, shot, power_shot, distancia, altura, vento, angulo, terreno, spin, curva, slope, mira = undefined, percent = undefined) => {
 
     const altura_colision = altura * 1.094 * 3.2;
@@ -1519,100 +1511,6 @@ function anglecalc4(value) {
 
 }
 
-const YARDS_TO_PB = 0.2167;
-const YARDS_TO_PBA = 0.8668;
-const YARDS_TO_PBA_PLUS = 1.032;
-
 function desvioByDegree(yards, distance) {
     return Math.sin(Math.atan2(yards * -1.5, distance)) * distance / 1.5;
-}
-
-function fix(value) {
-
-    if (value < 0)
-        value = Math.ceil(value);
-    else
-        value = Math.floor(value);
-
-    return value;
-}
-
-function getSlopeByResolution() {
-
-    const resolution = {
-        width: checkValidInput(document.getElementById('rel-width').value),
-        height: checkValidInput(document.getElementById('rel-height').value)
-    };
-
-    const auto_fit = document.getElementById('auto-fit').checked;
-
-    if (resolution.height < 480)
-        return 1.0;
-
-    let value = resolution.height / 480;
-
-    if (!auto_fit)
-        value = fix(value);
-
-    if (value == 0)
-        value = 1.0;
-
-    return value;
-}
-
-function getResolutionPBLimit() {
-
-    const resolution = {
-        width: checkValidInput(document.getElementById('rel-width').value),
-        height: checkValidInput(document.getElementById('rel-height').value)
-    };
-
-    let value = ((480 / resolution.height * 0.006) * (resolution.width / 2)) / YARDS_TO_PB;
-
-    if (value <= 0)
-        value = 1.0;
-
-    return value;
-}
-
-function smartDesvio(smartData) {
-
-    let MAX_PB = checkValidInput(document.getElementById('smart-dev-limit').value);
-
-    if (MAX_PB <= 0) // no limit
-        MAX_PB = Math.floor(getResolutionPBLimit() * 10) / 10;
-
-    const yards = desvioByDegree(smartData.desvio, smartData.options.distance);
-
-    let pb_sample = yards / YARDS_TO_PB;
-
-    if (Math.abs(pb_sample) <= MAX_PB)
-        return `${pb_sample.toFixed(4)}pb`;
-
-    pb_sample = yards / YARDS_TO_PBA;
-
-    if (Math.abs(pb_sample) <= MAX_PB)
-        return `${pb_sample.toFixed(4)}pba`;
-
-    pb_sample = yards / YARDS_TO_PBA_PLUS;
-
-    if (Math.abs(pb_sample) <= MAX_PB)
-        return `${pb_sample.toFixed(4)}pba+`;
-
-    // key 0 from keybord
-    let powerRange = 230;
-
-    for (let i = 12; i >= 0; --i) {
-
-        smartData.club.init(CLUB_INFO[CLUB_INFO_ENUM[i]]);
-
-        powerRange = smartData.club.getRange(smartData.options.power.options, smartData.options.power.pwr, smartData.options.ps);
-
-        pb_sample = (yards / YARDS_TO_PB) / ((powerRange * 3.2 * 1.4 - smartData.altura) * 0.0625)
-
-        if (Math.abs(pb_sample) <= MAX_PB)
-            return `${pb_sample.toFixed(4)}pba${powerRange}`
-    }
-
-    return `${pb_sample.toFixed(4)}pba${powerRange}`
 }

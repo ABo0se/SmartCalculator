@@ -1268,8 +1268,8 @@ function tickCheckBox(box)
 // Human-readable label + list-field name for each swept dimension, used both to build
 // the sweep values and to label the exported spreadsheet's first column.
 const DATATYPE_INFO = [
-    { label: 'Distance (y)',    listField: 'distancelist', startField: 'distancestart', endField: 'distanceend' },
-    { label: 'Height (y)',      listField: 'heightlist',   startField: 'heightstart',   endField: 'heightend' },
+    { label: 'Distance',    listField: 'distancelist', startField: 'distancestart', endField: 'distanceend' },
+    { label: 'Height',      listField: 'heightlist',   startField: 'heightstart',   endField: 'heightend' },
     { label: 'Wind',            listField: 'windlist',     startField: 'windstart',     endField: 'windend' },
     { label: 'Wind Degree',     listField: 'winddeglist',  startField: 'winddegstart',  endField: 'winddegend' },
     { label: 'Slope',           listField: 'slopelist',    startField: 'slopestart',    endField: 'slopeend' },
@@ -1484,8 +1484,33 @@ function solveShot(power_player, club_info, shot, power_shot, distance, height, 
     return { ok: true, power: f[index_f].power, power_range: f[index_f].power_range, desvio: f[index_f].desvio };
 }
 
+function showProgress(total) {
+    const container = document.getElementById('progress-container');
+    const fill = document.getElementById('progress-fill');
+    const label = document.getElementById('progress-label');
+    container.style.display = 'block';
+    fill.style.width = '0%';
+    label.innerHTML = `0 / ${total}`;
+}
+
+function updateProgress(current, total) {
+    const fill = document.getElementById('progress-fill');
+    const label = document.getElementById('progress-label');
+    const pct = total > 0 ? (current / total) * 100 : 0;
+    fill.style.width = `${pct}%`;
+    label.innerHTML = `${current} / ${total}`;
+}
+
+function hideProgress() {
+    document.getElementById('progress-container').style.display = 'none';
+}
+
+function yieldToBrowser() {
+    return new Promise(resolve => setTimeout(resolve, 0));
+}
+
 // Calculation Functions
-function calc(el) {
+async function calc(el) {
     let power = checkValidInput(document.getElementById('power').value);
     let auxpart_pwr = checkValidInput(document.getElementById('auxpart_pwr').value);
     let card_pwr = checkValidInput(document.getElementById('card_pwr').value);
@@ -1528,7 +1553,7 @@ function calc(el) {
 
     if (mydata.datatype < 0) {
         result.style.color = 'Red';
-        result.innerHTML = 'กรุณาเลือกข้อมูลที่ต้องการ sweep (ติ๊กถูกที่ช่องด้านซ้ายของค่าที่ต้องการ)';
+        result.innerHTML = 'กรุณาเลือกข้อมูลที่ต้องการแจกแจง (ติ๊กถูกที่ช่องด้านซ้ายของค่าที่ต้องการ)';
         return;
     }
 
@@ -1558,6 +1583,9 @@ function calc(el) {
 
     let successCount = 0;
 
+    const total = sweepValues.length;
+    showProgress(total);
+
     for (let i = 0; i < sweepValues.length; i++) {
         const params = { ...fixed };
         params[sweepKey] = sweepValues[i];
@@ -1585,7 +1613,12 @@ function calc(el) {
             }
             myanswer.shotpowerlist.push(null);
         }
+
+        updateProgress(i + 1, total);
+        await yieldToBrowser();
     }
+
+    hideProgress();
     
     const info1 = DATATYPE_INFO[mydata.datatype];
     const start = mydata[info1.startField];
@@ -1620,11 +1653,51 @@ function calc(el) {
     const rows = sweepValues.map((v, i) => ({
         [info.label]: v,
         'Pow (%)': myanswer.okList[i] ? Number(myanswer.powerList[i].toFixed(3)) : '-',
+        'Pow (y)': myanswer.okList[i] ? Number(myanswer.shotpowerlist[i].toFixed(3)) : '-',
         'HWI': myanswer.okList[i] ? Number(myanswer.hwilist[i].toFixed(4)) : '-',
         ...(mydata.Aim !== 1 && {
         'AIM': myanswer.okList[i] ? Number(myanswer.hwiaimlist[i].toFixed(4)) : '-'
         }),
-        'Pow (y)': myanswer.okList[i] ? Number(myanswer.shotpowerlist[i].toFixed(3)) : '-',
+        // ΔPow From Pow at height 0. [Height mode only]
+        // ΔPow From Pow at wind 0. [Wind mode only]
+        // ΔPow From Pow at slope 0. [Slope mode only]
+        // ΔPow From Pow at ground 100. [Ground mode only]
+        // ΔPow From Pow at spin 0. [Spin mode only]
+        // ΔPow From Pow at curve 0. [Curve mode only]
+
+        // H = ΔPow / height from height 0. [Height mode only]
+
+        // ΔHWI from HWI at height 0. [Height mode only]
+        // ΔHWI from HWI at wind 0. [Wind mode only]
+        // ΔHWI from HWI at slope 0. [Slope mode only]
+        // ΔHWI from HWI at ground 100. [Ground mode only]
+        // ΔHWI from HWI at spin 0. [Spin mode only]
+        // ΔHWI from HWI at curve 0. [Curve mode only]
+
+        // HWI Adj = ΔHWI / HWI at height 0. [Height mode only]
+        // HWI Adj = ΔHWI / HWI at wind 0. [Wind mode only]
+        // HWI Adj = ΔHWI / HWI at slope 0. [Slope mode only]
+        // HWI Adj = ΔHWI / HWI at ground 100. [Ground mode only]
+        // HWI Adj = ΔHWI / HWI at spin 0. [Spin mode only]
+        // HWI Adj = ΔHWI / HWI at curve 0. [Curve mode only]
+
+        // Wind Eff Diff = Difference on Pow (y) on very small wind strength change (tailwind/headwind) on designated shot configs [Any modes]
+        // Calculated by taking the difference of Pow (y) on very small wind strength to give out same distance compared to wind 0.
+        // "Wind Eff Diff" value data should be "Pow (y)" diff per 1m/s wind in pangya.
+        // Old test values based on "HWI (pb)" value with 1m/s + wind direction is perpendicular from golf trajectory on older simulator logic. 
+        // *I will upload excel file with tested values for "Wind Eff Diff" on each heights and distances.
+        // Wind Eff Diff Formula = [HWI (pb)]*5/24
+
+        // Pow Diff = Difference on Pow (y) on very small elevation on designated height and distance. [Height mode only for now]
+        // Calculated by taking the difference of Pow (y) on very small elevation to give out same distance compared to very nearby height.
+        // c, k value = get Diff value on designated elevations. [Height mode only for now]
+        // Pow Diff Formula = (c/k)·e^(−x/k)
+        // "Pow Diff" value data should be "Pow (y)" diff per 1m elevation in pangya.
+        // *Tested on different height only on older logic.
+        // When x = height, c and k are some value that make equation on that height and distance true.
+        // c and k value is the same on the same elevation, not sure about other configs.
+        // Old test values have some errors, but usable on most cases.
+        // *I will upload excel file with tested values for c and k on different heights and distances on current prumpt.
     }));
 
     // 3. Create worksheet

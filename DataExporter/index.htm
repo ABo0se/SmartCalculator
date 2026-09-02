@@ -43,7 +43,23 @@
 
 		.container-grid {
 			display: grid;
-			grid-template-columns: auto 120px auto;
+			grid-template-columns: 110px 110px auto;
+			grid-row-gap: 5px;
+			grid-column-gap: 10px;
+			margin-bottom: 10px;
+		}
+
+		.container-grid-slope {
+			display: grid;
+			grid-template-columns: 110px 110px;
+			grid-row-gap: 5px;
+			grid-column-gap: 10px;
+			margin-bottom: 10px;
+		}
+
+		.container-grid-angle {
+			display: grid;
+			grid-template-columns: 110px 110px auto;
 			grid-row-gap: 5px;
 			grid-column-gap: 10px;
 			margin-bottom: 10px;
@@ -236,7 +252,7 @@
 				<div>
 					<label class="section-header"><br><br><b>Mycella Slope Formula</b></label>
 					<button id="toggleView2" onclick="toggleView(this)">Hide</button>
-					<div id="mycella" class="container-grid" style="padding-top: 10px;">
+					<div id="mycella" class="container-grid-slope" style="padding-top: 10px;">
 						<label class="label">ตัวคูณเอียง:</label>
 						<input class="input" id="x-slope" type="text">
 						<label class="label">PX:</label>
@@ -254,7 +270,7 @@
 
 				<div>
 					<label class="section-header" style="text-align:center; display:block;"><br><br><b>คำนวนองศาลม</b></label>
-					<div id="anglecalc" class="container-grid" style="padding-top: 10px">
+					<div id="anglecalc" class="container-grid-angle" style="padding-top: 10px">
 						<label class="label">ใส่องศาแบบ 90 : </label>
 						<input class="input" id="degree90" type="text"><br>
 						<button onClick="anglecalc1(this)">◤</button>
@@ -328,7 +344,7 @@
 					<div class="container-grid"><br>
 						<label class="label">Aim : </label>
 						<input class="input" id="aim" value="4" type="text">
-						<label class="label">ค่าความห่างของข้อมูล : </label>
+						<label class="label">ความห่างข้อมูล : </label>
 						<input class="input" id="datafrequency" value="1" type="text">
 						<input type="reset" value="เคลียร์" name="data">
 					</div>

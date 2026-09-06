@@ -1241,6 +1241,16 @@ class AnswerFinder{
     hwiaimlist = [];
     shotpowerlist = [];
     okList = []; // true/false per row, whether the solve succeeded
+
+    // Derived analysis columns (only populated for the modes they apply to)
+    deltaPowList = [];      // Pow(y) - Pow(y) at that mode's baseline. [height/wind/slope/ground/spin/curve modes]
+    hRateList = [];         // deltaPow / height, i.e. ΔPow per yard of elevation. [height mode only]
+    deltaHwiList = [];      // HWI - HWI at that mode's baseline. [height/wind/slope/ground/spin/curve modes]
+    hwiAdjList = [];        // deltaHwi / baseline HWI. [height/wind/slope/ground/spin/curve modes]
+    windEffDiffList = [];   // local centered derivative of Pow(y) w.r.t. wind, at this row's own config. [any mode]
+    powDiffList = [];       // local centered derivative of Pow(y) w.r.t. height, at this row's own config. [any mode]
+    hwiDiffList = [];       // local centered derivative of HWI w.r.t. wind, at this row's own config. [any mode]
+    hwiHeightDiffList = [];       // local centered derivative of HWI w.r.t. height, at this row's own config. [any mode]
 }
 
 //Functions
@@ -1374,6 +1384,7 @@ function solveShot(power_player, club_info, shot, power_shot, distance, height, 
 
     let f = [found];
     let index_f = 0;
+    let finalAim = 0; // find_power's own default when no mira/aim is passed in
 
     if (found.power == -1)
         return { ok: false };
@@ -1462,6 +1473,7 @@ function solveShot(power_player, club_info, shot, power_shot, distance, height, 
                 }
                 warmPower = r.power;
                 index_f = f.length - 1;
+                finalAim = midAim;
                 const gap = fixedPointGap(r, midAim);
 
                 if (Math.abs(gap) < AIM_CONVERGE_THRESHOLD)
@@ -1481,7 +1493,7 @@ function solveShot(power_player, club_info, shot, power_shot, distance, height, 
     if (f[index_f].power == -1)
         return { ok: false };
 
-    return { ok: true, power: f[index_f].power, power_range: f[index_f].power_range, desvio: f[index_f].desvio };
+    return { ok: true, power: f[index_f].power, power_range: f[index_f].power_range, desvio: f[index_f].desvio, aim: finalAim };
 }
 
 function showProgress(total) {
@@ -1507,6 +1519,110 @@ function hideProgress() {
 
 function yieldToBrowser() {
     return new Promise(resolve => setTimeout(resolve, 0));
+}
+
+// Wind Pow Diff: how much Pow(y) changes per 1m/s of wind.
+function computeWindEffDiff(power_player, club, shot, power_shot, params) {
+    const EPS = 0.1; // m/s
+
+    const evalAt = (signedOffset) => {
+        const w = params.wind + signedOffset;
+        const windMag = w >= 0 ? w : -w;
+        const deg = w >= 0 ? params.degree : (((params.degree + 180) % 360) + 360) % 360;
+        const r = solveShot(power_player, club, shot, power_shot,
+            params.distance, params.height, windMag, deg, params.ground, params.spin, params.curve, params.slope);
+        if (!r.ok)
+            return null;
+        const powY = r.power_range * r.power;
+        // const powY = r.power;
+        // Guard against the near-perpendicular case: when wind is close to pure crosswind
+        // (degree near 90/270 relative to aim), cos(degree-aim) approaches 0, and even tiny,
+        // genuine aim differences get massively amplified by dividing by it. Below this
+        // threshold, treat the normalization as unreliable rather than returning a wild number.
+        // const cosComponent = Math.cos((deg * Math.PI / 180) - r.aim);
+        // if (Math.abs(cosComponent) < MIN_EFFECTIVE_TRIG)
+        //     return null;
+        // return powY / (Math.abs(cosComponent));
+        return powY;
+    };
+
+    const normMinus = evalAt(-EPS);
+    const normPlus = evalAt(EPS);
+    if (normMinus === null || normPlus === null)
+        return null;
+
+    return Math.abs((normPlus - normMinus) / (2 * EPS));
+}
+
+// Height Pow Diff: how much Pow(y) changes per 1m of height.
+function computeHeightPowDiff(power_player, club, shot, power_shot, params, fixedAim) {
+    const EPS = 0.1; // m
+
+    const evalAt = (height) => {
+        const r = find_power(power_player, club, shot, power_shot,
+            params.distance, height, params.wind, params.degree, params.ground, params.spin, params.curve, params.slope, fixedAim);
+        return r.power !== -1 ? r.power_range * r.power : null;
+    };
+
+    const powMinus = evalAt(params.height - EPS);
+    const powPlus = evalAt(params.height + EPS);
+    if (powMinus === null || powPlus === null)
+        return null;
+
+    return Math.abs((powPlus - powMinus) / (2 * EPS));
+}
+
+// Wind HWI Diff: how much HWI changes per 1m/s of EFFECTIVE crosswind.
+function computeWindHwiDiff(power_player, club, shot, power_shot, params, HWIMultiplier) {
+    const EPS = 0.1; // m/s
+
+    const evalAt = (signedOffset) => {
+        const w = params.wind + signedOffset;
+        const windMag = w >= 0 ? w : -w;
+        const deg = w >= 0 ? params.degree : (((params.degree + 180) % 360) + 360) % 360;
+        const r = solveShot(power_player, club, shot, power_shot,
+            params.distance, params.height, windMag, deg, params.ground, params.spin, params.curve, params.slope);
+        if (!r.ok)
+            return null;
+        const hwi = (desvioByDegree(r.desvio, params.distance) / 0.2167) * HWIMultiplier;
+        // Guard against the near-perpendicular case: when wind is close to pure headwind/tailwind
+        // (degree near 0/180 relative to aim), sin(degree-aim) approaches 0.
+        const sinComponent = Math.sin((deg * Math.PI / 180) - r.aim);
+        // if (Math.abs(sinComponent) < MIN_EFFECTIVE_TRIG)
+        //    return null;
+        return hwi / (windMag * Math.abs(sinComponent));
+    };
+
+    const normMinus = evalAt(-EPS);
+    const normPlus = evalAt(EPS);
+    if (normMinus === null || normPlus === null)
+        return null;
+
+    return Math.abs((normPlus - normMinus) / (2 * EPS));
+}
+
+// HWI Height Diff: how much HWI changes per 1m of elevation.
+function computeHeightHwiDiff(power_player, club, shot, power_shot, params, HWIMultiplier) {
+    const EPS = 0.1; // m
+
+    const evalAt = (height) => {
+        const r = solveShot(power_player, club, shot, power_shot,
+            params.distance, height, params.wind, params.degree, params.ground, params.spin, params.curve, params.slope);
+        if (!r.ok)
+            return null;
+        const hwi = (desvioByDegree(r.desvio, params.distance) / 0.2167) * HWIMultiplier;
+        const sinComponent = Math.sin((params.degree * Math.PI / 180) - r.aim);
+        //if (Math.abs(sinComponent) < MIN_EFFECTIVE_TRIG)
+        //    return null;
+        return hwi / (params.wind * Math.abs(sinComponent));
+    };
+
+    const normMinus = evalAt(params.height - EPS);
+    const normPlus = evalAt(params.height + EPS);
+    if (normMinus === null || normPlus === null)
+        return null;
+
+    return Math.abs((normPlus - normMinus) / (2 * EPS));
 }
 
 // Calculation Functions
@@ -1581,6 +1697,22 @@ async function calc(el) {
     const fixedKeyByDatatype = ['distance', 'height', 'wind', 'degree', 'slope', 'ground', 'spin', 'curve'];
     const sweepKey = fixedKeyByDatatype[mydata.datatype];
 
+    // Canonical "zero" reference per dimension, used for ΔPow/ΔHWI/HWI Adj. Distance and
+    // Wind Degree have no natural zero-reference for this purpose, so they're excluded.
+    const CANONICAL_ZERO = { height: 0, wind: 0, slope: 0, ground: 100, spin: 0, curve: 0 };
+
+    let baselinePow = null, baselineHwi = null;
+    if (sweepKey in CANONICAL_ZERO) {
+        const baseParams = { ...fixed, [sweepKey]: CANONICAL_ZERO[sweepKey] };
+        const baseR = solveShot(power_player, club, shot, power_shot,
+            baseParams.distance, baseParams.height, baseParams.wind, baseParams.degree,
+            baseParams.ground, baseParams.spin, baseParams.curve, baseParams.slope);
+        if (baseR.ok) {
+            baselinePow = baseR.power_range * baseR.power;
+            baselineHwi = (desvioByDegree(baseR.desvio, baseParams.distance) / 0.2167) * mydata.HWIMultiplier;
+        }
+    }
+
     let successCount = 0;
 
     const total = sweepValues.length;
@@ -1599,12 +1731,30 @@ async function calc(el) {
         if (r.ok) {
             successCount++;
             const hwi = (desvioByDegree(r.desvio, params.distance) / 0.2167) * mydata.HWIMultiplier;
+            const powY = r.power_range * r.power;
             myanswer.powerList.push(r.power * 100);
             myanswer.hwilist.push(hwi);
             if (mydata.Aim !== 1) {
                 myanswer.hwiaimlist.push(hwi / mydata.Aim);
             }
-            myanswer.shotpowerlist.push(r.power_range * r.power);
+            myanswer.shotpowerlist.push(powY);
+
+            myanswer.deltaPowList.push(baselinePow !== null ? (powY - baselinePow) : null);
+            myanswer.hRateList.push((baselinePow !== null && sweepValues[i] !== 0)
+                ? (powY - baselinePow) / sweepValues[i] : null);
+            myanswer.deltaHwiList.push(baselineHwi !== null ? (hwi - baselineHwi) : null);
+            // HWI Adj normalized by the effective crosswind component: wind * sin(degree - aim),
+            // using this row's own solved aim (r.aim), not the raw wind-degree relative to the
+            // target line. This is the component of wind actually perpendicular to the ball's
+            // real flight direction, which is what drives lateral deviation (HWI).
+            const effectiveCrosswind = params.wind * Math.abs(Math.sin((params.degree * Math.PI / 180) - r.aim));
+            myanswer.hwiAdjList.push((baselineHwi !== null && effectiveCrosswind !== 0)
+                ? (hwi - baselineHwi) / (effectiveCrosswind * Math.abs(sweepValues[i])) : null);
+            myanswer.windEffDiffList.push(computeWindEffDiff(power_player, club, shot, power_shot, params));
+            myanswer.powDiffList.push(computeHeightPowDiff(power_player, club, shot, power_shot, params, r.aim));
+            myanswer.hwiDiffList.push(computeWindHwiDiff(power_player, club, shot, power_shot, params, mydata.HWIMultiplier));
+            myanswer.hwiHeightDiffList.push(computeHeightHwiDiff(power_player, club, shot, power_shot, params, mydata.HWIMultiplier));
+            
         } else {
             myanswer.powerList.push(null);
             myanswer.hwilist.push(null);
@@ -1612,6 +1762,14 @@ async function calc(el) {
                 myanswer.hwiaimlist.push(null);
             }
             myanswer.shotpowerlist.push(null);
+            myanswer.deltaPowList.push(null);
+            myanswer.hRateList.push(null);
+            myanswer.deltaHwiList.push(null);
+            myanswer.hwiAdjList.push(null);
+            myanswer.windEffDiffList.push(null);
+            myanswer.powDiffList.push(null);
+            myanswer.hwiDiffList.push(null);
+            myanswer.hwiHeightDiffList.push(null);
         }
 
         updateProgress(i + 1, total);
@@ -1654,50 +1812,44 @@ async function calc(el) {
         [info.label]: v,
         'Pow (%)': myanswer.okList[i] ? Number(myanswer.powerList[i].toFixed(3)) : '-',
         'Pow (y)': myanswer.okList[i] ? Number(myanswer.shotpowerlist[i].toFixed(3)) : '-',
-        'HWI': myanswer.okList[i] ? Number(myanswer.hwilist[i].toFixed(4)) : '-',
+        // ΔPow/ΔHWI/HWI Adj only make sense for modes with a natural "zero" reference
+        // (height/wind/slope/ground/spin/curve) -- not distance or wind degree.
+        ...(baselinePow !== null && {
+            'ΔPow': (myanswer.okList[i] && myanswer.deltaPowList[i] !== null) ? Number(myanswer.deltaPowList[i].toFixed(3)) : '-',
+        }),
+
+        ...(baselinePow !== null && {
+            'H': (myanswer.okList[i] && myanswer.hRateList[i] !== null) ? Number(myanswer.hRateList[i].toFixed(4)) : '-',
+        }),
+
+        // Pow Diff = Pow (y) diff per 1m elevation, computed as a local numerical derivative
+        // at this row's own height (see computeHeightPowDiff). [Any mode]
+        'Height Pow Diff': (myanswer.okList[i] && myanswer.powDiffList[i] !== null) ? Number(myanswer.powDiffList[i].toFixed(4)) : '-',
+
         ...(mydata.Aim !== 1 && {
         'AIM': myanswer.okList[i] ? Number(myanswer.hwiaimlist[i].toFixed(4)) : '-'
         }),
-        // ΔPow From Pow at height 0. [Height mode only]
-        // ΔPow From Pow at wind 0. [Wind mode only]
-        // ΔPow From Pow at slope 0. [Slope mode only]
-        // ΔPow From Pow at ground 100. [Ground mode only]
-        // ΔPow From Pow at spin 0. [Spin mode only]
-        // ΔPow From Pow at curve 0. [Curve mode only]
 
-        // H = ΔPow / height from height 0. [Height mode only]
+        'HWI': myanswer.okList[i] ? Number(myanswer.hwilist[i].toFixed(4)) : '-',
 
-        // ΔHWI from HWI at height 0. [Height mode only]
-        // ΔHWI from HWI at wind 0. [Wind mode only]
-        // ΔHWI from HWI at slope 0. [Slope mode only]
-        // ΔHWI from HWI at ground 100. [Ground mode only]
-        // ΔHWI from HWI at spin 0. [Spin mode only]
-        // ΔHWI from HWI at curve 0. [Curve mode only]
+        ...(baselineHwi !== null && {
+            'ΔHWI': (myanswer.okList[i] && myanswer.deltaHwiList[i] !== null) ? Number(myanswer.deltaHwiList[i].toFixed(4)) : '-',
+            'HWI Adj': (myanswer.okList[i] && myanswer.hwiAdjList[i] !== null) ? Number(myanswer.hwiAdjList[i].toFixed(4)) : '-',
+        }),
 
-        // HWI Adj = ΔHWI / HWI at height 0. [Height mode only]
-        // HWI Adj = ΔHWI / HWI at wind 0. [Wind mode only]
-        // HWI Adj = ΔHWI / HWI at slope 0. [Slope mode only]
-        // HWI Adj = ΔHWI / HWI at ground 100. [Ground mode only]
-        // HWI Adj = ΔHWI / HWI at spin 0. [Spin mode only]
-        // HWI Adj = ΔHWI / HWI at curve 0. [Curve mode only]
+        // HWI Adj Diff = HWI Adj diff per 1m elevation, computed as a local numerical derivative at
+        // this row's own elevation (see computeWindHwiDiff). [Any mode]
+        'HWI Height Diff': (myanswer.okList[i] && myanswer.hwiHeightDiffList[i] !== null) ? Number(myanswer.hwiHeightDiffList[i].toFixed(4)) : '-',
 
-        // Wind Eff Diff = Difference on Pow (y) on very small wind strength change (tailwind/headwind) on designated shot configs [Any modes]
-        // Calculated by taking the difference of Pow (y) on very small wind strength to give out same distance compared to wind 0.
-        // "Wind Eff Diff" value data should be "Pow (y)" diff per 1m/s wind in pangya.
-        // Old test values based on "HWI (pb)" value with 1m/s + wind direction is perpendicular from golf trajectory on older simulator logic. 
-        // *I will upload excel file with tested values for "Wind Eff Diff" on each heights and distances.
-        // Wind Eff Diff Formula = [HWI (pb)]*5/24
-
-        // Pow Diff = Difference on Pow (y) on very small elevation on designated height and distance. [Height mode only for now]
-        // Calculated by taking the difference of Pow (y) on very small elevation to give out same distance compared to very nearby height.
-        // c, k value = get Diff value on designated elevations. [Height mode only for now]
-        // Pow Diff Formula = (c/k)·e^(−x/k)
-        // "Pow Diff" value data should be "Pow (y)" diff per 1m elevation in pangya.
-        // *Tested on different height only on older logic.
-        // When x = height, c and k are some value that make equation on that height and distance true.
-        // c and k value is the same on the same elevation, not sure about other configs.
-        // Old test values have some errors, but usable on most cases.
-        // *I will upload excel file with tested values for c and k on different heights and distances on current prumpt.
+        // Wind Eff Diff = Pow (y) diff per 1 m/s wind, computed as a local numerical
+        // derivative at this row's own wind/degree (see computeWindEffDiff). [Any mode]
+        'Wind Pow Diff': (myanswer.okList[i] && myanswer.windEffDiffList[i] !== null) ? Number(myanswer.windEffDiffList[i].toFixed(4)) : '-',
+        
+        // HWI Diff = HWI diff per 1 m/s wind, computed as a local numerical derivative at
+        // this row's own wind/degree (see computeWindHwiDiff). [Any mode]
+        'Wind HWI Diff': (myanswer.okList[i] && myanswer.hwiDiffList[i] !== null) ? Number(myanswer.hwiDiffList[i].toFixed(4)) : '-',
+        
+        
     }));
 
     // 3. Create worksheet

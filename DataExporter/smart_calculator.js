@@ -1142,6 +1142,18 @@ function checkdrive(el) {
 
 }
 
+function checkdriveExcel(el) {
+
+    const power_value = checkValidInput(document.querySelector('#power').value);
+    const ring_value = checkValidInput(document.querySelector('#auxpart_pwr').value);
+    const lolo_value = checkValidInput(document.querySelector('#card_ps_pwr').value);
+
+    const drivecal = 200 + power_value * 2 + ring_value;
+
+    return `${drivecal}+${lolo_value}`;
+
+}
+
 function anglecalc1(value) {
 
     const angle90 = checkValidInput(document.querySelector('#degree90').value);
@@ -1247,6 +1259,7 @@ class AnswerFinder{
     hRateList = [];         // deltaPow / height, i.e. ΔPow per yard of elevation. [height mode only]
     deltaHwiList = [];      // HWI - HWI at that mode's baseline. [height/wind/slope/ground/spin/curve modes]
     hwiAdjList = [];        // deltaHwi / baseline HWI. [height/wind/slope/ground/spin/curve modes]
+    hwiNormList = [];       // HWI / (mag * sin(direction)) HWI. [height/wind/slope/ground/spin/curve modes]
     windEffDiffList = [];   // local centered derivative of Pow(y) w.r.t. wind, at this row's own config. [any mode]
     powDiffList = [];       // local centered derivative of Pow(y) w.r.t. height, at this row's own config. [any mode]
     hwiDiffList = [];       // local centered derivative of HWI w.r.t. wind, at this row's own config. [any mode]
@@ -1523,6 +1536,7 @@ function yieldToBrowser() {
 
 // Wind Pow Diff: how much Pow(y) changes per 1m/s of wind.
 function computeWindEffDiff(power_player, club, shot, power_shot, params) {
+
     const EPS = 0.1; // m/s
 
     const evalAt = (signedOffset) => {
@@ -1556,6 +1570,7 @@ function computeWindEffDiff(power_player, club, shot, power_shot, params) {
 
 // Height Pow Diff: how much Pow(y) changes per 1m of height.
 function computeHeightPowDiff(power_player, club, shot, power_shot, params, fixedAim) {
+
     const EPS = 0.1; // m
 
     const evalAt = (height) => {
@@ -1574,6 +1589,7 @@ function computeHeightPowDiff(power_player, club, shot, power_shot, params, fixe
 
 // Wind HWI Diff: how much HWI changes per 1m/s of EFFECTIVE crosswind.
 function computeWindHwiDiff(power_player, club, shot, power_shot, params, HWIMultiplier) {
+
     const EPS = 0.1; // m/s
 
     const evalAt = (signedOffset) => {
@@ -1603,6 +1619,7 @@ function computeWindHwiDiff(power_player, club, shot, power_shot, params, HWIMul
 
 // HWI Height Diff: how much HWI changes per 1m of elevation.
 function computeHeightHwiDiff(power_player, club, shot, power_shot, params, HWIMultiplier) {
+
     const EPS = 0.1; // m
 
     const evalAt = (height) => {
@@ -1740,7 +1757,7 @@ async function calc(el) {
             myanswer.shotpowerlist.push(powY);
 
             myanswer.deltaPowList.push(baselinePow !== null ? (powY - baselinePow) : null);
-            myanswer.hRateList.push((baselinePow !== null && sweepValues[i] !== 0)
+            myanswer.hRateList.push((baselinePow !== null && sweepValues[i] !== 0 && sweepKey === 'height')
                 ? (powY - baselinePow) / sweepValues[i] : null);
             myanswer.deltaHwiList.push(baselineHwi !== null ? (hwi - baselineHwi) : null);
             // HWI Adj normalized by the effective crosswind component: wind * sin(degree - aim),
@@ -1748,8 +1765,9 @@ async function calc(el) {
             // target line. This is the component of wind actually perpendicular to the ball's
             // real flight direction, which is what drives lateral deviation (HWI).
             const effectiveCrosswind = params.wind * Math.abs(Math.sin((params.degree * Math.PI / 180) - r.aim));
-            myanswer.hwiAdjList.push((baselineHwi !== null && effectiveCrosswind !== 0)
+            myanswer.hwiAdjList.push((baselineHwi !== null && effectiveCrosswind !== 0 && sweepKey === 'height')
                 ? (hwi - baselineHwi) / (effectiveCrosswind * Math.abs(sweepValues[i])) : null);
+            myanswer.hwiNormList.push((effectiveCrosswind !== 0) ? (hwi / effectiveCrosswind) : null);
             myanswer.windEffDiffList.push(computeWindEffDiff(power_player, club, shot, power_shot, params));
             myanswer.powDiffList.push(computeHeightPowDiff(power_player, club, shot, power_shot, params, r.aim));
             myanswer.hwiDiffList.push(computeWindHwiDiff(power_player, club, shot, power_shot, params, mydata.HWIMultiplier));
@@ -1781,13 +1799,18 @@ async function calc(el) {
     const info1 = DATATYPE_INFO[mydata.datatype];
     const start = mydata[info1.startField];
     const end = mydata[info1.endField];
-    
-    // 1. Define your designated first 22 rows (AOA format)
+
+    // 1. Define your designated header rows (AOA format)
     const designatedHeaderRows = [
         ['Summary', ''],
         [],
+        ['ClubConf:', checkdriveExcel(this)],
+        ['ClubType:', document.getElementById('club').options[document.getElementById('club').selectedIndex].text],
+        ['ShotType:', document.getElementById('shot').options[document.getElementById('shot').selectedIndex].text],
+        ['PowerShot:', document.getElementById('power_shot').options[document.getElementById('power_shot').selectedIndex].text],
+        [],
         ['Type:', info.label],
-        ['Range:', `${start}`,` ${end}`],
+        ['Range:', `${start} to ${end}`],
         ['Freq.:', mydata.DiffRate],
         ['X Aim:', mydata.Aim],
         ['X HWI:', mydata.HWIMultiplier],
@@ -1802,8 +1825,15 @@ async function calc(el) {
         ['Curve:', mydata.curvestart],
         [],
         ['Steps:', sweepValues.length],
-        ['Success:', myanswer.okList.filter(Boolean).length], 
+        ['Success:', myanswer.okList.filter(Boolean).length],
         ['Failure:', sweepValues.length - myanswer.okList.filter(Boolean).length],
+        [],
+        ['Note!'],
+        ['Height Pow Diff', 'Pow(y) change per 1m on current elevation.'],
+        ['Height HWI Diff', 'HWI(pb) change per 1m on current elevation.'],
+        ['Wind Pow Diff', 'Pow(y) change per 1m/s on current wind.'],
+        ['Wind HWI Diff', 'HWI(pb) change per 1m/s on current crosswind scale.'],
+        ['HWI Norm.', 'HWI(pb) normalized by effective crosswind.'],
         []
     ];
 
@@ -1818,7 +1848,7 @@ async function calc(el) {
             'ΔPow': (myanswer.okList[i] && myanswer.deltaPowList[i] !== null) ? Number(myanswer.deltaPowList[i].toFixed(3)) : '-',
         }),
 
-        ...(baselinePow !== null && {
+        ...(baselinePow !== null && sweepKey === 'height' && {
             'H': (myanswer.okList[i] && myanswer.hRateList[i] !== null) ? Number(myanswer.hRateList[i].toFixed(4)) : '-',
         }),
 
@@ -1834,12 +1864,17 @@ async function calc(el) {
 
         ...(baselineHwi !== null && {
             'ΔHWI': (myanswer.okList[i] && myanswer.deltaHwiList[i] !== null) ? Number(myanswer.deltaHwiList[i].toFixed(4)) : '-',
+        }),
+
+        'HWI Norm.': myanswer.okList[i] ? Number(myanswer.hwiNormList[i].toFixed(4)) : '-',
+
+        ...(baselineHwi !== null && sweepKey === 'height' && {
             'HWI Adj': (myanswer.okList[i] && myanswer.hwiAdjList[i] !== null) ? Number(myanswer.hwiAdjList[i].toFixed(4)) : '-',
         }),
 
         // HWI Adj Diff = HWI Adj diff per 1m elevation, computed as a local numerical derivative at
         // this row's own elevation (see computeWindHwiDiff). [Any mode]
-        'HWI Height Diff': (myanswer.okList[i] && myanswer.hwiHeightDiffList[i] !== null) ? Number(myanswer.hwiHeightDiffList[i].toFixed(4)) : '-',
+        'Height HWI Diff': (myanswer.okList[i] && myanswer.hwiHeightDiffList[i] !== null) ? Number(myanswer.hwiHeightDiffList[i].toFixed(4)) : '-',
 
         // Wind Eff Diff = Pow (y) diff per 1 m/s wind, computed as a local numerical
         // derivative at this row's own wind/degree (see computeWindEffDiff). [Any mode]
@@ -1849,12 +1884,141 @@ async function calc(el) {
         // this row's own wind/degree (see computeWindHwiDiff). [Any mode]
         'Wind HWI Diff': (myanswer.okList[i] && myanswer.hwiDiffList[i] !== null) ? Number(myanswer.hwiDiffList[i].toFixed(4)) : '-',
         
-        
     }));
 
-    // 3. Create worksheet
-    const worksheet = XLSX.utils.aoa_to_sheet(designatedHeaderRows);
-    XLSX.utils.sheet_add_json(worksheet, rows, { origin: 'A22' });
+    // 3. Create worksheet using raw values
+// 1. Create sheet from raw headers
+const worksheet = XLSX.utils.aoa_to_sheet(designatedHeaderRows);
+
+// 2. Set explicit numerical merge bounds
+worksheet['!merges'] = designatedHeaderRows.map((_, r) => ({
+    s: { r: r, c: 1 },  // Start at Column B
+    e: { r: r, c: 10 }  // End at Column K
+}));
+
+// 3. Append JSON table rows below headers
+XLSX.utils.sheet_add_json(
+    worksheet,
+    rows,
+    { origin: `A${designatedHeaderRows.length + 1}` }
+);
+
+// 4. Apply styles to designated top header rows
+const totalCols = 11; // Columns A (0) through K (10)
+
+designatedHeaderRows.forEach((row, rowIndex) => {
+    for (let colIndex = 0; colIndex < totalCols; colIndex++) {
+        const cellAddress = XLSX.utils.encode_cell({ r: rowIndex, c: colIndex });
+
+        if (!worksheet[cellAddress]) {
+            worksheet[cellAddress] = { t: 's', v: '' };
+        } else {
+            worksheet[cellAddress].t = 's';
+            worksheet[cellAddress].v = String(worksheet[cellAddress].v ?? '');
+        }
+
+        worksheet[cellAddress].s = {
+            alignment: { horizontal: 'left', vertical: 'center' }
+        };
+    }
+});
+
+// -------------------------------------------------------------
+// 5. AUTO-FIT COLUMN 1 (A) ONLY & LOCATE TABLE HEADER ROW
+// -------------------------------------------------------------
+worksheet['!cols'] = worksheet['!cols'] || [];
+
+let maxColAWidth = 10;
+let tableHeaderRowIndex = -1;
+
+Object.keys(worksheet).forEach(cellKey => {
+    if (cellKey.startsWith('!')) return;
+
+    const { r, c } = XLSX.utils.decode_cell(cellKey);
+    const cellVal = String(worksheet[cellKey]?.v ?? '').trim();
+
+    // Auto-fit Column A
+    if (c === 0) {
+        if (cellVal.length > maxColAWidth) {
+            maxColAWidth = cellVal.length;
+        }
+
+        // Broad matching: check if cell in Col A matches 'height' or 'pow (%)' exists in Col B
+        if (cellVal.toLowerCase() === 'height' || cellVal.toLowerCase().includes('variable')) {
+            tableHeaderRowIndex = r;
+        }
+    }
+});
+
+// Apply dynamic width to Column A
+worksheet['!cols'][0] = { wch: maxColAWidth + 3 };
+
+// -------------------------------------------------------------
+// 6. APPLY RIGHT ALIGNMENT + FONT SIZE 8 TO HEADER ROW
+// -------------------------------------------------------------
+
+//Fallback: If dynamic lookup missed, default to row 34 (index 33)
+// if (tableHeaderRowIndex === -1 && activeRange.e.r >= 33) {
+    tableHeaderRowIndex = 33;
+//}
+
+const activeRange = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
+
+if (tableHeaderRowIndex !== -1) {
+    // 1. Initialize !rows and !cols arrays
+    worksheet['!rows'] = worksheet['!rows'] || [];
+    worksheet['!cols'] = worksheet['!cols'] || [];
+
+    // 2. Set fixed height for row 34 in pixels (e.g., 30px)
+    worksheet['!rows'][tableHeaderRowIndex] = { hpx: 20 };
+
+    for (let c = 0; c <= activeRange.e.c; c++) {
+        // 3. Set column widths: Auto-fit Col A (index 0), fixed pixels for all others
+        if (c === 0) {
+            worksheet['!cols'][0] = { wpx: 86.6}; // 86.6px
+        } else {
+            worksheet['!cols'][c] = { wpx: 60 }; // Fixed pixel width for Col B, C, D, etc.
+        }
+
+        const cellAddress = XLSX.utils.encode_cell({ r: tableHeaderRowIndex, c: c });
+
+        if (!worksheet[cellAddress]) {
+            worksheet[cellAddress] = { t: 's', v: '' };
+        } else {
+            worksheet[cellAddress].t = 's';
+            worksheet[cellAddress].v = String(worksheet[cellAddress].v ?? '');
+        }
+
+        // Explicitly set alignment and font size
+        worksheet[cellAddress].s = {
+            alignment: {
+                horizontal: 'right',
+                vertical: 'center'
+            },
+            font: {
+                sz: 8
+            }
+        };
+    }
+}
+
+// -------------------------------------------------------------
+// 7. SANITIZE VALUES & UPDATE BOUNDARIES (PRESERVES EXISTING STYLES)
+// -------------------------------------------------------------
+Object.keys(worksheet).forEach(key => {
+    if (key.startsWith('!')) return;
+
+    // Clean up NaN values without overriding the .s style property
+    if (worksheet[key].v === 'NaN' || Number.isNaN(worksheet[key].v)) {
+        worksheet[key].v = 0;
+    }
+
+    const { r, c } = XLSX.utils.decode_cell(key);
+    if (r > activeRange.e.r) activeRange.e.r = r;
+    if (c > activeRange.e.c) activeRange.e.c = c;
+});
+
+worksheet['!ref'] = XLSX.utils.encode_range(activeRange);
 
     // 4. Save Workbook
     const workbook = XLSX.utils.book_new();
@@ -1862,7 +2026,4 @@ async function calc(el) {
 
     const filename = `pangya_export_${info.label.replace(/[^A-Za-z]/g, '')}_${Date.now()}.xlsx`;
     XLSX.writeFile(workbook, filename);
-
-    result.style.color = successCount > 0 ? 'Pink' : 'Red';
-    result.innerHTML = `Exported ${rows.length} rows (${successCount} solved, ${rows.length - successCount} failed) to ${filename}`;
 }

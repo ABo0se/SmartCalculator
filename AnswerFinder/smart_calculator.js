@@ -1051,9 +1051,10 @@ const find_power = (power_player, club_info, shot, power_shot, distancia, altura
         if (lowBound !== null && highBound !== null) {
             // Bracketed: true bisection halves the interval every time and can never
             // underflow to a stuck step size the way the old feed-based search could.
-            if (highBound - lowBound < 1e-12)
-                break; // reached floating-point resolution floor between the two bounds
-            options.percentShot = (lowBound + highBound) / 2;
+        if (highBound - lowBound < 1e-12)
+            break; // reached floating-point resolution floor between the two bounds
+        
+        options.percentShot = (lowBound + highBound) / 2;
         } else if (highBound !== null) {
             options.percentShot = highBound - bracketStep;
         } else if (lowBound !== null) {
@@ -1306,11 +1307,10 @@ function calc(el) {
 
                 for (let i = 0; i < AIM_BISECT_MAX_ITER; i++)
                 {
-                    // if (Math.abs(hiAim - loAim) < 1e-12)
-                    // {
-                    //     alert("EXIT: bracket width reached 1e-12");
-                    //     break;
-                    // }
+                    if (Math.abs(hiAim - loAim) < 1e-12)
+                    {
+                        break;
+                    }
                     let midAim = (loAim + hiAim) / 2;
                     let r = tryAim(midAim, warmPower);
                     pushAttempt(midAim, r);

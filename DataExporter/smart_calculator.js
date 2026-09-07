@@ -1866,7 +1866,7 @@ async function calc(el) {
             'ΔHWI': (myanswer.okList[i] && myanswer.deltaHwiList[i] !== null) ? Number(myanswer.deltaHwiList[i].toFixed(4)) : '-',
         }),
 
-        'HWI Norm.': myanswer.okList[i] ? Number(myanswer.hwiNormList[i].toFixed(4)) : '-',
+        'HWI Norm.': (myanswer.okList[i] && myanswer.hwiNormList[i] !== null) ? Number(myanswer.hwiNormList[i].toFixed(4)): '-',
 
         ...(baselineHwi !== null && sweepKey === 'height' && {
             'HWI Adj': (myanswer.okList[i] && myanswer.hwiAdjList[i] !== null) ? Number(myanswer.hwiAdjList[i].toFixed(4)) : '-',

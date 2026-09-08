@@ -34,118 +34,58 @@
 
 		.label {
 			grid-column: 1 / 2;
-			color: pink;
+			color:pink;
 		}
 
 		.input {
 			grid-column: 2 / 3;
 		}
-
+		
 		.container-grid {
 			display: grid;
-			grid-template-columns: 110px 110px auto;
+			grid-template-columns: auto 120px auto;
 			grid-row-gap: 5px;
 			grid-column-gap: 10px;
 			margin-bottom: 10px;
 		}
-
-		.container-grid-slope {
-			display: grid;
-			grid-template-columns: 110px 110px;
-			grid-row-gap: 5px;
-			grid-column-gap: 10px;
-			margin-bottom: 10px;
-		}
-
-		.container-grid-angle {
-			display: grid;
-			grid-template-columns: 110px 110px auto;
-			grid-row-gap: 5px;
-			grid-column-gap: 10px;
-			margin-bottom: 10px;
-		}
-
 		.stacked-container-grid {
 			display: grid;
 			grid-row-gap: 5px;
 			grid-column-gap: 10px;
 			margin-bottom: 10px;
 		}
-
 		.container-grid-fivecolumn {
 			display: grid;
-			grid-template-columns: 100px 60px 5px 60px auto;
+			grid-template-columns: 100px 60px 5px 60px 20px;
 			grid-row-gap: 5px;
 			grid-column-gap: 10px;
 			margin-bottom: 10px;
 		}
-
-		.mytext {
+		.mytext{
 			color: pink;
 		}
-
+		
 		.angle-container-grid {
 			display: grid;
-			grid-template-columns: 120px 120px;
+			grid-template-columns: 120px 120px ;
 			grid-row-gap: 5px;
 			grid-column-gap: 10px;
 			margin-bottom: 10px;
 		}
-
 		.LeftCorner {
-			position: absolute;
-			top: 10;
-			left: 10;
+    		position: absolute;
+    		top: 10;
+    		left: 10;
 		}
 
 		.ButtonContext {
-			font-size: 16px;
-			color: black;
-			margin: 5px;
-			padding: 8px 16px;
-			background-color: pink;
-			text-decoration: none;
-			border-radius: 4px;
-		}
-
-		.mega-title {
-			font-size: 49px;
-			font-family: 'Bahnschrift';
-			color: white;
-		}
-
-		.section-header {
-			color: pink;
-			font-size: 20px;
-		}
-
-		.progress-container {
-			display: none;
-			width: 250px;
-			margin-top: 8px;
-		}
-
-		.progress-track {
-			width: 100%;
-			height: 18px;
-			background-color: #444;
-			border-radius: 4px;
-			overflow: hidden;
-			border: 1px solid pink;
-		}
-
-		.progress-fill {
-			height: 100%;
-			width: 0%;
-			background-color: pink;
-			transition: width 0.1s linear;
-		}
-
-		.progress-label {
-			color: pink;
-			font-size: 14px;
-			text-align: center;
-			margin-top: 4px;
+    		font-size: 16px;
+    		color: black;
+    		margin: 5px;
+    		padding: 8px 16px;
+    		background-color: pink;
+    		text-decoration: none;
+    		border-radius: 4px;
 		}
 	</style>
 	<script>
@@ -174,34 +114,35 @@
 </head>
 <body style="background-color: rgb(0, 84, 71);">
 	<div class="LeftCorner">
-		<a class="ButtonContext" href="../index.html">
-			🏠︎ กลับหน้าหลัก
-		</a>
-		<a class="ButtonContext" href="../AnswerFinder/index.htm">
-			↔ สลับโหมด
-		</a>
+		<a class="ButtonContext"  href="../index.html">
+            🏠︎ กลับหน้าหลัก
+    	</a>
+				<a class="ButtonContext"  href="../AnswerFinder/index.htm">
+            ↔ สลับโหมด 
+    	</a>
 	</div>
 	<div id="display-container" style="display: flex; align-items: center; flex-direction: column;">
 		<h1 style="margin-bottom: 20px;">
-			<b class="mega-title">Pin Exporter</b>
+			<b><text style="font-size:49px;font-family:'Bahnschrift' ;color:white";>Pin Exporter
+			</b></text>
 		</h1>
 		<div style="display: flex; flex-direction: column; align-items: center;">
 			<div id="wedegt-config" style="display: flex; flex-direction: column; z-index: 10; padding: 10px">
 				<div>
-					<label class="section-header"><b>Client config</b></label>
+					<label style="color:pink; font-size:20px"><b>Client config</b></text></label>
 					<button id="toggleView" onclick="toggleView(this)">Hide</button>
 					<div class="container-grid" style="padding-top: 10px; grid-template-columns: auto 120px auto;">
-						<label class="label">จอ: </label><select class="input" id="dis">
-							<option value="1">PB BIG</option>
-							<option value="1">800x600</option>
-							<option value="1.25">800x600 pb เล็ก</option>
-							<option value="1.5">1280x720</option>
-							<option value="1.875">1600x900</option>
-						</select>
+				<label class="label">จอ: </label><select class="input" id="dis">
+					<option value="1">PB BIG</option>
+					<option value="1">800x600</option>
+					<option value="1.25">800x600 pb เล็ก</option>
+					<option value="1.5">1280x720</option>
+					<option value="1.875">1600x900</option>
+				</select>
 					</div><br>
-					<label class="section-header" style="text-align:center; display:block;"><b>Character status</b></label>
+					<label style="color:pink"><text style="font-size:20px"><b>Character status</b></text></label>
 					<div class="angle-container-grid" style="padding-top: 10px;">
-						<label class="label">Power รวม :</label>
+						<label class="label" >Power รวม :</label>
 						<input class="input" id="power" type="text" value="37">
 						<label class="label">ระยะแหวน (y) :</label>
 						<input class="input" id="auxpart_pwr" type="text" value="-8">
@@ -212,47 +153,48 @@
 						<label hidden class="label">Mascot Power :</label>
 						<input hidden class="input" id="mascot_pwr" type="text" value="0">
 						<label class="label">ระยะไม้ของคุณ =</label>
-						<input class="output" id="current_drive" type="text" style="color:Red">
+						<input class="output" id="current_drive" type="text" <text style="color:Red"></text>
 					</div>
-					<div style="display: grid; grid-template-columns: 70px 120px auto;">
-						<button style="width: 250px; height: 50px" onClick="checkdrive(this)"><b><span style="color:Red; font-size:20px">เช็คระยะไม้</span></b></button>
-					</div>
+						<div style="display: grid; grid-template-columns: 70px 120px auto;">
+						<button style="width: 250px; height: 50px" onClick="checkdrive(this)"><b><text style="color:Red"><text style="font-size:20px">เช็คระยะไม้</text></b></button>
 				</div>
+			</div>
+		
 
-				<label class="section-header" style="text-align:center; display:block;"><br><b>Calculator ZONE</b></label>
-				<div class="container-grid" style="padding-top: 10px;">
-					<label class="label">เลือกไม้ : </label><select class="input" id="club">
-						<option value="0">1W</option>
-						<option value="1">2W</option>
-						<option value="2">3W</option>
-						<option value="3">2I</option>
-						<option value="4">3I</option>
-						<option value="5">4I</option>
-						<option value="6">5I</option>
-						<option value="7">6I</option>
-						<option value="8">7I</option>
-						<option value="9">8I</option>
-						<option value="10">9I</option>
-						<option value="11">PW</option>
-						<option value="12">SW</option>
-					</select>
-					<label class="label">เลือกท่าตี : </label><select class="input" id="shot">
-						<option value="0">Dunk</option>
-						<option value="1">Tomahawk</option>
-						<option value="2">Spike</option>
-						<option value="3">Cobra</option>
-					</select>
-					<label class="label">จำนวนเกจ : </label><select class="input" id="power_shot">
-						<option value="0">Normal Shot</option>
-						<option value="1">1 Power Shot</option>
-						<option value="2">2 Power Shot</option>
-						<option value="3">15y Power Shot</option>
-					</select>
-				</div>
+			<label style="color:pink"><br><text style="font-size:20px"><b>Configs</b></text></label>
+			<div class="angle-container-grid" style="padding-top: 10px;">
+				<label class="label">เลือกไม้ : </label><select class="input" id="club">
+					<option value="0">1W</option>
+					<option value="1">2W</option>
+					<option value="2">3W</option>
+					<option value="3">2I</option>
+					<option value="4">3I</option>
+					<option value="5">4I</option>
+					<option value="6">5I</option>
+					<option value="7">6I</option>
+					<option value="8">7I</option>
+					<option value="9">8I</option>
+					<option value="10">9I</option>
+					<option value="11">PW</option>
+					<option value="12">SW</option>
+				</select>
+				<label class="label">เลือกท่าตี : </label><select class="input" id="shot">
+					<option value="0">Dunk</option>
+					<option value="1">Tomahawk</option>
+					<option value="2">Spike</option>
+					<option value="3">Cobra</option>
+				</select>
+				<label class="label">จำนวนเกจ : </label><select class="input" id="power_shot">
+				<option value="0">Normal Shot</option>
+				<option value="1">1 Power Shot</option>
+				<option value="2">2 Power Shot</option>
+				<option value="3">15y Power Shot</option>
+				</select>
+			</div>
 				<div>
-					<label class="section-header"><br><br><b>Mycella Slope Formula</b></label>
-					<button id="toggleView2" onclick="toggleView(this)">Hide</button>
-					<div id="mycella" class="container-grid-slope" style="padding-top: 10px;">
+					<label style="color:pink"><br><br><text style="font-size:20px"><b>Mycella Slope Formula</b></text></label>
+					<button id="toggleView" onclick="toggleView(this)">Hide</button>
+					<div id="mycella" class="angle-container-grid" style="padding-top: 10px;">
 						<label class="label">ตัวคูณเอียง:</label>
 						<input class="input" id="x-slope" type="text">
 						<label class="label">PX:</label>
@@ -264,109 +206,115 @@
 							<option value="+1">+</option>
 							<option value="-1">-</option>
 						</select>
+						<label class="label">Slope Break:</label>
+						<input class="input" id="slopebreak" type="text">
 						<input type="reset" value="Cal" onClick="calcMycella(this)">
-					</div>
+					</div>	
 				</div>
 
-				<div>
-					<label class="section-header" style="text-align:center; display:block;"><br><br><b>คำนวนองศาลม</b></label>
-					<div id="anglecalc" class="container-grid-angle" style="padding-top: 10px">
-						<label class="label">ใส่องศาแบบ 90 : </label>
-						<input class="input" id="degree90" type="text"><br>
+			<div>
+					<label style="color:pink"><br><br><text style="font-size:20px"><b>คำนวนองศาลม</b></text></label>
+					<button id="toggleView" onclick="toggleView(this)">Hide</button>
+					<div id="anglecalc" class="angle-container-grid" style="padding-top: 10px">
+						<label id="anglecalc" class="label">ใส่องศาแบบ 90 : </label>
+						<input class="input" id="degree90" type="text">
 						<button onClick="anglecalc1(this)">◤</button>
-						<button onClick="anglecalc4(this)">◥</button><br>
+						<button onClick="anglecalc4(this)">◥</button>
 						<button onClick="anglecalc2(this)">◣</button>
 						<button onClick="anglecalc3(this)">◢</button>
+						<label class="label">Real DG :</label>
+						<input class="input" id="winddeg" type="text">
 					</div>
-				</div>
+			</div>	
 
-				<form>
-					<label class="section-header" style="text-align:center; display:block;"><br><br><b>Export Answer Data</b></label>
-					<br>
-					<div class="stacked-container-grid">
-						<div class="container-grid-fivecolumn">
-							<label class="mytext">ระยะหลุม : </label>
-							<input id="distance1" type="text">
-							<label class="mytext">-</label>
-							<input class="destinationdata" id="distance2" type="text" disabled>
-							<input onchange="tickCheckBox(this)" class="databool" id="distancecheckbox" type="checkbox">
-						</div>
-						<div class="container-grid-fivecolumn">
-							<label class="mytext">หลุมสูงต่ำ : </label>
-							<input id="height1" type="text">
-							<label class="mytext">-</label>
-							<input class="destinationdata" id="height2" type="text" disabled>
-							<input onchange="tickCheckBox(this)" class="databool" id="heightcheckbox" type="checkbox">
-						</div>
-						<div class="container-grid-fivecolumn">
-							<label class="mytext">แรงลม : </label>
-							<input id="wind1" type="text">
-							<label class="mytext">-</label>
-							<input class="destinationdata" id="wind2" type="text" disabled>
-							<input onchange="tickCheckBox(this)" class="databool" id="windcheckbox" type="checkbox">
-						</div>
-						<div class="container-grid-fivecolumn">
-							<label class="mytext">องศาลม : </label>
-							<input id="degree1" type="text">
-							<label class="mytext">-</label>
-							<input class="destinationdata" id="degree2" type="text" disabled>
-							<input onchange="tickCheckBox(this)" class="databool" id="degreecheckbox" type="checkbox">
-						</div>
-						<div class="container-grid-fivecolumn">
-							<label class="mytext">ลูกเอียง : </label>
-							<input id="slope1" type="text">
-							<label class="mytext">-</label>
-							<input class="destinationdata" id="slope2" type="text" disabled>
-							<input onchange="tickCheckBox(this)" class="databool" id="slope_breakcheckbox" type="checkbox">
-						</div>
-						<div class="container-grid-fivecolumn">
-							<label class="mytext">เอฟเฟคลูก : </label>
-							<input id="ground1" value="100" type="text">
-							<label class="mytext">-</label>
-							<input class="destinationdata" id="ground2" type="text" disabled>
-							<input onchange="tickCheckBox(this)" class="databool" id="groundcheckbox" type="checkbox">
-						</div>
-						<div class="container-grid-fivecolumn">
-							<label class="mytext">สปิน : </label>
-							<input id="spin1" type="text">
-							<label class="mytext">-</label>
-							<input class="destinationdata" id="spin2" type="text" disabled>
-							<input onchange="tickCheckBox(this)" class="databool" id="spincheckbox" type="checkbox">
-						</div>
-						<div class="container-grid-fivecolumn">
-							<label class="mytext">เคิฟ : </label>
-							<input id="curve1" type="text">
-							<label class="mytext">-</label>
-							<input class="destinationdata" id="curve2" type="text" disabled>
-							<input onchange="tickCheckBox(this)" class="databool" id="curvecheckbox" type="checkbox">
-						</div>
-					</div>
-					<div class="container-grid"><br>
-						<label class="label">Aim : </label>
-						<input class="input" id="aim" value="4" type="text">
-						<label class="label">ความห่างข้อมูล : </label>
-						<input class="input" id="datafrequency" value="1" type="text">
-						<input type="reset" value="เคลียร์" name="data">
-					</div>
-				</form>
-				<div style="display: grid; grid-template-columns: 90px 120px auto;">
-					<button style="width: 250px; height: 40px" onClick="calc(this)"><b><span style="color:Green; font-size:24px">Export to Excel</span></b></button>
+		<form>
+			<label style="color:pink"><br><br><text style="font-size:20px"><b>Export Answer Data</b></text></label>
+			<input type="reset" value="Clear" name="data">
+			<br>
+			<br>
+			<div class="stacked-container-grid">
+				<div class="container-grid-fivecolumn">
+					<label class="mytext">ระยะหลุม : </label>
+					<input id="distance1" type="text">
+					<label class="mytext">-</label>
+					<input class="destinationdata" id="distance2" type="text" disabled>
+					<input onchange="tickCheckBox(this)" class="databool" id="distancecheckbox" type="checkbox">
 				</div>
-				<div id="progress-container" class="progress-container">
-					<div class="progress-track">
-						<div id="progress-fill" class="progress-fill"></div>
-					</div>
-					<div id="progress-label" class="progress-label">0 / 0</div>
+				<div class="container-grid-fivecolumn">
+					<label class="mytext">หลุมสูงต่ำ : </label>
+					<input id="height1" type="text">
+					<label class="mytext">-</label>
+					<input class="destinationdata" id="height2" type="text" disabled>
+					<input onchange="tickCheckBox(this)" class="databool" id="heightcheckbox" type="checkbox">
+				</div>
+				<div class="container-grid-fivecolumn">
+					<label class="mytext">แรงลม : </label>
+					<input id="wind1" type="text">
+					<label class="mytext">-</label>
+					<input class="destinationdata" id="wind2" type="text" disabled>
+					<input onchange="tickCheckBox(this)" class="databool" id="windcheckbox" type="checkbox">
+				</div>
+				<div class="container-grid-fivecolumn">
+					<label class="mytext">องศาลม : </label>
+					<input id="degree1" type="text">
+					<label class="mytext">-</label>
+					<input class="destinationdata" id="degree2" type="text" disabled>
+					<input onchange="tickCheckBox(this)" class="databool" id="degreecheckbox" type="checkbox">
+				</div>
+				<div class="container-grid-fivecolumn">
+					<label class="mytext">ลูกเอียง : </label>
+					<input id="slope1" type="text">
+					<label class="mytext">-</label>
+					<input class="destinationdata" id="slope2" type="text" disabled>
+					<input onchange="tickCheckBox(this)" class="databool" id="slopecheckbox" type="checkbox">
+				</div>
+				<div class="container-grid-fivecolumn">
+					<label class="mytext">เอฟเฟคลูก : </label>
+					<input id="ground1" value="100" type="text">
+					<label class="mytext">-</label>
+					<input class="destinationdata" id="ground2" type="text" disabled>
+					<input onchange="tickCheckBox(this)" class="databool" id="groundcheckbox" type="checkbox">
+				</div>
+				<div class="container-grid-fivecolumn">
+					<label class="mytext">สปิน : </label>
+					<input id="spin1" type="text">
+					<label class="mytext">-</label>
+					<input class="destinationdata" id="spin2" type="text" disabled>
+					<input onchange="tickCheckBox(this)" class="databool" id="spincheckbox" type="checkbox">
+				</div>
+				<div class="container-grid-fivecolumn">
+					<label class="mytext">เคิฟ : </label>
+					<input id="curve1" type="text">
+					<label class="mytext">-</label>
+					<input class="destinationdata"id="curve2" type="text" disabled>
+					<input onchange="tickCheckBox(this)" class="databool" id="curvecheckbox" type="checkbox">
 				</div>
 			</div>
-			<span style="margin-top: 5px;">
-				<font id="result"></font><br>
-			</span>
-			<center><div style="padding: 10px; font-size: 10px; color:pink"><b>Developed by Acrisio SuperSS Dev</b></div></center>
+			<div class="angle-container-grid"><br>
+				<label class="label">Aim : </label>
+				<input class="input" id="aim" value="4" type="text">
+				<label class="label">ความห่างข้อมูล 1 : </label>
+				<input class="input" id="datafrequency" value="1" type="text">
+				<label class="label">ความห่างข้อมูล 2 : </label>
+				<input class="input" id="data2freq" value="1" type="text"><br>
+			</div>
+			<div style="padding-top: 5px;">
+				<input type="checkbox" id="includeSensitivity" checked>
+				<label for="includeSensitivity" class="mytext">Diff Calculation</label><br>
+				<input type="checkbox" id="switchOrder" disabled>
+				<label for="switchOrder" class="mytext">Switch Order</label>
+			</div>
+		</form>
+		<div style="display: grid; grid-template-columns: 90px 250px auto; padding-top: 10px;">
+			<button style="width: 250px; height: 40px" onClick="exportSweep()"><b><text style="color:Green"><text style="font-size:24px">Export XLSX</text></b></button>
 		</div>
+		</div>
+		<span style="margin-top: 5px;">
+			<font id="export-status" style="color:cyan"></font><br>
+		</span>
+		<rodape style="padding: 10px; font-size: 10px; color:pink"><b>Developed by Acrisio SuperSS Dev<b></rodape>
 	</div>
-	<script src="physics_engine.js"></script>
-	<script src="smart_calculator.js"></script>
 	<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+	<script src="smart_calculator.js"></script>
 </body>
 </html>

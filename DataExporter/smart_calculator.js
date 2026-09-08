@@ -1363,9 +1363,8 @@ function localDerivative(baseParams, dis, aimX, key) {
 // -------------------------------------------------------------------------------------
 
 // Computes one full row (all columns) for a single point of the swept variable.
-// `baseline` (optional) is the solved+displayed row at value==0 for the same variable,
-// used for the ΔPow / H / ΔHWI / HWI Adj baseline-relative columns (only produced when
-// the swept range actually spans 0).
+// `baseline` (optional) is retained for compatibility with the original sweep path.
+// Height-relative columns are finalized later against an explicit height == 0 solve.
 function computeSweepRow(fixedParams, varKey, value, dis, aimX, baseline, includeSensitivity) {
     const params = Object.assign({}, fixedParams);
     params[varKey] = value;
@@ -1396,7 +1395,7 @@ function computeSweepRow(fixedParams, varKey, value, dis, aimX, baseline, includ
         row.deltaPow = disp.powYard - baseline.powYard;
         row.deltaHwi = disp.hwi - baseline.hwi;
         row.h = value !== 0 ? row.deltaPow / value : null;
-        row.hwiAdj = value !== 0 ? -(row.deltaHwi / value) : null;
+        row.hwiAdj = value !== 0 ? row.deltaHwi / value : null;
     }
 
     return row;
@@ -1904,21 +1903,6 @@ function buildSweepCache(sweep, fixedParams) {
     return cache;
 }
 
-function applySweepBaseline(rows, values) {
-    const baseline = rows.find((row) => row.value === 0 && row.success);
-    if (!baseline)
-        return;
-
-    for (const row of rows) {
-        if (!row.success)
-            continue;
-        row.deltaPow = row.powYard - baseline.powYard;
-        row.deltaHwi = row.hwi - baseline.hwi;
-        row.h = row.value !== 0 ? row.deltaPow / row.value : null;
-        row.hwiAdj = row.value !== 0 ? -(row.deltaHwi / row.value) : null;
-    }
-}
-
 async function runCachedSweepOrientation(var1, var2, fixedParams, shared, cache, statusPrefix) {
     const values1 = generateRange(var1.start, var1.end, var1.freq);
     const values2 = var2 ? generateRange(var2.start, var2.end, var2.freq) : [null];
@@ -1951,11 +1935,70 @@ async function runCachedSweepOrientation(var1, var2, fixedParams, shared, cache,
             await new Promise((resolve) => setTimeout(resolve, 0));
         }
 
-        applySweepBaseline(rows, values1);
         blocks.push({ label: value2, rows, success: rows.filter((row) => row.success).length, failure: rows.filter((row) => !row.success).length });
     }
 
     return { var1, var2, values1, blocks, success, failure, fromCache: true };
+}
+
+function getSweepPointParams(sweep, block, row, fixedParams) {
+    const params = Object.assign({}, fixedParams, {
+        [sweep.var1.def.key]: row.value,
+    });
+    if (sweep.var2)
+        params[sweep.var2.def.key] = block.label;
+    return params;
+}
+
+function getOrSolveCachedDisplay(params, cache, dis, aimX) {
+    const key = makeSweepPointKey(params);
+    const cached = cache.get(key);
+    if (cached)
+        return cached.success ? cached : null;
+
+    const solved = solveAim(params);
+    if (!solved.success) {
+        cache.set(key, { success: false });
+        return null;
+    }
+
+    const display = toDisplayRow(params, solved, dis, aimX);
+    const cachedDisplay = Object.assign({ success: true, steps: solved.steps }, display);
+    cache.set(key, cachedDisplay);
+    return cachedDisplay;
+}
+
+// H and HWI Adj are always relative to the same shot solved at height 0m,
+// never relative to the first value of whichever variable happens to be swept.
+// This also applies when Height is fixed and another field is being swept.
+function applyHeightAdjustmentsToSweep(sweep, fixedParams, cache, dis, aimX) {
+    for (const block of sweep.blocks) {
+        for (const row of block.rows) {
+            if (!row.success)
+                continue;
+
+            delete row.deltaPow;
+            delete row.deltaHwi;
+            delete row.h;
+            delete row.hwiAdj;
+            delete row.hwiNorm;
+
+            const params = getSweepPointParams(sweep, block, row, fixedParams);
+            const height = params.height;
+            const currentHwiNorm = hwiNorm(row.hwi, params.wind, params.degree);
+            row.hwiNorm = currentHwiNorm;
+            const baselineParams = Object.assign({}, params, { height: 0 });
+            const baseline = getOrSolveCachedDisplay(baselineParams, cache, dis, aimX);
+            if (!baseline)
+                continue;
+
+            row.deltaPow = row.powYard - baseline.powYard;
+            row.deltaHwi = row.hwi - baseline.hwi;
+            row.h = height !== 0 ? row.deltaPow / height : null;
+            const baselineHwiNorm = hwiNorm(baseline.hwi, baselineParams.wind, baselineParams.degree);
+            row.hwiAdj = height !== 0 ? (currentHwiNorm - baselineHwiNorm) / height : null;
+        }
+    }
 }
 
 // Main entry point wired to the "Export" button.
@@ -1986,10 +2029,14 @@ async function exportSweep() {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     const firstSweep = await runSweepOrientation(var1, var2, fixedParams, shared, includeSensitivity, '');
+    const sweepCache = buildSweepCache(firstSweep, fixedParams);
+    applyHeightAdjustmentsToSweep(firstSweep, fixedParams, sweepCache, shared.dis, shared.aimX);
     const sweeps = [firstSweep];
     if (roundTrip)
         sweeps.push(await runCachedSweepOrientation(var2, var1, fixedParams, shared,
-            buildSweepCache(firstSweep, fixedParams), 'Reverse Order'));
+            sweepCache, 'Reverse Order'));
+    if (roundTrip)
+        applyHeightAdjustmentsToSweep(sweeps[1], fixedParams, sweepCache, shared.dis, shared.aimX);
 
     const totalSuccess = sweeps.reduce((total, sweep) => total + sweep.success, 0);
     const totalFailure = sweeps.reduce((total, sweep) => total + sweep.failure, 0);
@@ -2011,7 +2058,7 @@ const NOTE_LINES = [
     ['Height HWI Diff', 'HWI(pb) change per 1m on current elevation.'],
     ['Wind Pow Diff', 'Pow(y) change per 1m/s on current wind.'],
     ['Wind HWI Diff', 'HWI(pb) change per 1m/s on current crosswind scale.'],
-    ['HWI Norm.', 'HWI(pb) normalized by effective crosswind.'],
+    ['HWI Norm.', 'HWI(pb) normalized by effective 1m/s crosswind.'],
 ];
 
 function fmt(n, digits) {
@@ -2031,12 +2078,12 @@ function decimalPlacesInInput(value) {
     return Math.max(0, decimalPart.length - exponent);
 }
 
-function hwiNorm(hwi, degree) {
+function hwiNorm(hwi, wind, degree) {
     const rad = degree * Math.PI / 180;
-    const s = Math.sin(rad);
-    if (Math.abs(s) < 1e-6)
+    const effectiveCrosswind = wind * Math.sin(rad);
+    if (Math.abs(effectiveCrosswind) < 1e-6)
         return hwi;
-    return hwi / s;
+    return hwi / effectiveCrosswind;
 }
 
 function buildAndDownloadWorkbook(ctx) {
@@ -2102,8 +2149,8 @@ function buildAndDownloadWorkbook(ctx) {
         const sweepVar1 = sweep.var1;
         const sweepVar2 = sweep.var2;
         const baseHeader = [sweepVar1.def.label, 'Pow (%)', 'Pow (y)'];
-        const includeHeightAdjustments = sweepVar1.type === 'height';
-        const withBaseline = ['ΔPow', ...(includeHeightAdjustments ? ['H'] : [])];
+        const includeHeightAdjustments = true;
+        const withBaseline = ['ΔPow'];
         const midHeader = ['Height Pow Diff', 'AIM', 'HWI'];
         const withBaselineHwi = ['ΔHWI'];
         const tailHeader = [
@@ -2114,9 +2161,14 @@ function buildAndDownloadWorkbook(ctx) {
             'Wind HWI Diff',
         ];
         const hasBaseline = sweep.blocks.some((b) => b.rows.some((r) => r.deltaPow !== undefined));
-        const header = hasBaseline
-            ? [...baseHeader, ...withBaseline, ...midHeader, ...withBaselineHwi, ...tailHeader]
-            : [...baseHeader, ...midHeader, ...tailHeader.filter((h) => h !== 'HWI Adj')];
+        const header = [
+            ...baseHeader,
+            ...(hasBaseline ? withBaseline : []),
+            ...(includeHeightAdjustments ? ['H'] : []),
+            ...midHeader,
+            ...(hasBaseline ? withBaselineHwi : []),
+            ...tailHeader,
+        ];
 
         if (isRoundTrip)
             aoa.push(['Reverse Order', `${sweepVar1.def.label} and ${sweepVar2.def.label}`]);
@@ -2132,18 +2184,19 @@ function buildAndDownloadWorkbook(ctx) {
                     aoa.push([row.value, ...header.slice(1).map(() => '-')]);
                     continue;
                 }
-                const norm = hwiNorm(row.hwi, fixedFieldValues.degree);
+                const norm = row.hwiNorm !== undefined
+                    ? row.hwiNorm
+                    : hwiNorm(row.hwi, fixedFieldValues.wind, fixedFieldValues.degree);
                 const line = [row.value, fmt(row.powPercent, 3), fmt(row.powYard, 3)];
-                if (hasBaseline) {
+                if (hasBaseline)
                     line.push(row.deltaPow !== undefined ? fmt(row.deltaPow, 3) : '-');
-                    if (includeHeightAdjustments)
-                        line.push(row.h !== undefined && row.h !== null ? fmt(row.h, 4) : '-');
-                }
+                if (includeHeightAdjustments)
+                    line.push(row.h !== undefined && row.h !== null ? fmt(row.h, 4) : '-');
                 line.push(fmt(row.heightPowDiff, 4), fmt(row.aim, 4), fmt(row.hwi, 4));
                 if (hasBaseline)
                     line.push(row.deltaHwi !== undefined ? fmt(row.deltaHwi, 4) : '-');
                 line.push(fmt(norm, 4));
-                if (hasBaseline && includeHeightAdjustments)
+                if (includeHeightAdjustments)
                     line.push(row.hwiAdj !== undefined && row.hwiAdj !== null ? fmt(row.hwiAdj, 4) : '-');
                 line.push(fmt(row.heightHwiDiff, 4), fmt(row.windPowDiff, 4), fmt(row.windHwiDiff, 4));
                 aoa.push(line);

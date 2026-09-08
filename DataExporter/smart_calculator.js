@@ -1330,13 +1330,7 @@ function toDisplayRow(input_values, solved, dis, aimX) {
 //  - Height Pow Diff  = +d(Pow)/d(height)
 //  - Height HWI Diff  = -d(HWI)/d(height)
 //  - Wind Pow Diff     = +d(Pow)/d(wind)      (sensitivity to wind *magnitude*)
-//  - Wind HWI Diff     = d(HWI)/d(degree)     (sensitivity to wind *direction*, not
-//                        magnitude -- HWI's sensitivity to wind magnitude turns out to
-//                        be large/unhelpful as a "diff" figure, whereas at a pure
-//                        crosswind angle (90 deg) HWI is at a local extremum in degree,
-//                        so this reads ~0 there and only grows away from 90 deg. This
-//                        pairing reproduces the reference data exactly; it reads oddly
-//                        named but is kept for consistency with the existing sheets.)
+//  - Wind HWI Diff     = +d(HWI)/d(wind)    (sensitivity to wind magnitude)
 function localDerivative(baseParams, dis, aimX, key) {
     const eps = 0.1;
     const plus = Object.assign({}, baseParams);
@@ -1384,11 +1378,10 @@ function computeSweepRow(fixedParams, varKey, value, dis, aimX, baseline, includ
     if (includeSensitivity) {
         const heightDeriv = localDerivative(params, dis, aimX, 'height');
         const windDeriv = localDerivative(params, dis, aimX, 'wind');
-        const degreeDeriv = localDerivative(params, dis, aimX, 'degree');
         row.heightPowDiff = heightDeriv ? heightDeriv.pow : null;
         row.heightHwiDiff = heightDeriv ? -heightDeriv.hwi : null;
         row.windPowDiff = windDeriv ? windDeriv.pow : null;
-        row.windHwiDiff = degreeDeriv ? degreeDeriv.hwi : null;
+        row.windHwiDiff = windDeriv ? windDeriv.hwi : null;
     }
 
     if (baseline) {
@@ -2056,8 +2049,8 @@ async function exportSweep() {
 const NOTE_LINES = [
     ['Height Pow Diff', 'Pow(y) change per 1m on current elevation.'],
     ['Height HWI Diff', 'HWI(pb) change per 1m on current elevation.'],
-    ['Wind Pow Diff', 'Pow(y) change per 1m/s on current wind.'],
-    ['Wind HWI Diff', 'HWI(pb) change per 1m/s on current crosswind scale.'],
+    ['Wind Pow Diff', 'Pow(y) change per 1m/s on current wind magnitude and angle.'],
+    ['Wind HWI Diff', 'HWI(pb) change per 1m/s on current wind magnitude and angle.'],
     ['HWI Norm.', 'HWI(pb) normalized by effective 1m/s crosswind.'],
 ];
 

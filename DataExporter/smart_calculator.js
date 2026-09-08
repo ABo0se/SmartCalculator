@@ -1664,10 +1664,6 @@ function formatParallelSweepStatus(completed, total, var1, var2) {
 // While fewer than 2 are ticked, ticking/unticking behaves as before (enables/disables
 // that row's "end" input). Once 2 are ticked, every other still-unticked checkbox is
 // disabled so a 3rd can't be selected; unticking one re-enables the rest.
-//
-// Also keeps the "Switch Order" checkbox in sync: it only makes sense (and is only
-// enabled) once exactly 2 variables are picked; with fewer than 2 it's disabled and
-// forced back to unchecked.
 function tickCheckBox(box) {
     const Containers = document.querySelectorAll('.container-grid-fivecolumn');
 
@@ -1691,20 +1687,12 @@ function tickCheckBox(box) {
         }
     }
 
-    const switchOrderBox = document.getElementById('switchOrder');
-    if (switchOrderBox) {
-        switchOrderBox.disabled = checkedCount < 2;
-        if (checkedCount < 2)
-            switchOrderBox.checked = false;
-    }
 }
 
 // Returns the checked field types in top-to-down page order (distance, height, wind,
 // degree, slope, ground, spin, curve — the same order they appear in the form). With
-// tickCheckBox() above capping the count at 2, this returns 0, 1, or 2 entries.
-// The first entry sweeps with Freq1, the second (if any) with Freq2 — unless the
-// "Switch Order" checkbox is ticked, which swaps the two so either variable can play
-// either role (e.g. sweeping Curve-on-Spin vs. Spin-on-Curve) without re-ticking boxes.
+// tickCheckBox() above capping the count at 2, this returns 0, 1, or 2 entries. The
+// first entry sweeps with Freq1 and the second (if any) with Freq2.
 function getCheckedTypesInOrder() {
     const types = [];
     for (const type of SWEEP_TYPE_ORDER) {
@@ -1712,10 +1700,6 @@ function getCheckedTypesInOrder() {
         if (el && el.checked)
             types.push(type);
     }
-
-    const switchOrderBox = document.getElementById('switchOrder');
-    if (types.length === 2 && switchOrderBox && switchOrderBox.checked)
-        types.reverse();
 
     return types;
 }
@@ -1834,12 +1818,144 @@ function readVar2() {
     const start = checkValidInput(document.getElementById(def.idPrefix + '1').value);
     const end = checkValidInput(document.getElementById(def.idPrefix + '2').value);
     const freq = checkValidInput(document.getElementById('data2freq').value) || 1;
-    return { type, def, start, end, freq };
+    const startInput = document.getElementById(def.idPrefix + '1').value;
+    const endInput = document.getElementById(def.idPrefix + '2').value;
+    const freqInput = document.getElementById('data2freq').value;
+    const decimals = Math.max(
+        decimalPlacesInInput(startInput),
+        decimalPlacesInInput(endInput),
+        decimalPlacesInInput(freqInput)
+    );
+    return { type, def, start, end, freq, decimals };
 }
 
 function setExportStatus(msg) {
     const el = document.getElementById('export-status');
     if (el) el.innerText = msg;
+}
+
+async function runSweepOrientation(var1, var2, fixedParams, shared, includeSensitivity, statusPrefix) {
+    const values1 = generateRange(var1.start, var1.end, var1.freq);
+    const blockDefs = [];
+    let values2 = null;
+
+    if (var2) {
+        values2 = generateRange(var2.start, var2.end, var2.freq);
+        for (const v2 of values2) {
+            const blockParams = Object.assign({}, fixedParams);
+            blockParams[var2.def.key] = v2;
+            blockDefs.push({ label: v2, fixedParams: blockParams });
+        }
+    } else {
+        blockDefs.push({ label: null, fixedParams });
+    }
+
+    const totalPoints = values1.length * blockDefs.length;
+    const updateStatus = (completed, total) => {
+        const suffix = var2 ? `${var1.def.label} × ${var2.def.label}` : var1.def.label;
+        const prefix = statusPrefix ? `${statusPrefix}: ` : '';
+        setExportStatus(`${prefix}กำลังคำนวณ ${completed}/${total} (${suffix}, ใช้ ${getSweepWorkerCount()} threads)`);
+    };
+
+    let blocks;
+    if (canUseSweepWorkers()) {
+        try {
+            blocks = await runSweepParallel(blockDefs, var1, values1, shared.dis, shared.aimX,
+                includeSensitivity, updateStatus);
+        } catch (err) {
+            console.warn('Multithreaded sweep failed, falling back to single-threaded sweep:', err);
+            blocks = await runSweepSerial(blockDefs, var1, var2, values1, shared, includeSensitivity);
+        }
+    } else {
+        blocks = await runSweepSerial(blockDefs, var1, var2, values1, shared, includeSensitivity);
+    }
+
+    let success = 0, failure = 0;
+    for (const block of blocks) {
+        success += block.success;
+        failure += block.failure;
+    }
+
+    return { var1, var2, values1, blocks, success, failure };
+}
+
+function makeSweepPointKey(params) {
+    return JSON.stringify(SWEEP_TYPE_ORDER.map((type) => params[SWEEP_FIELDS[type].key]));
+}
+
+function buildSweepCache(sweep, fixedParams) {
+    const cache = new Map();
+    for (const block of sweep.blocks) {
+        for (const row of block.rows) {
+            const params = Object.assign({}, fixedParams, {
+                [sweep.var1.def.key]: row.value,
+            });
+            if (sweep.var2)
+                params[sweep.var2.def.key] = block.label;
+
+            const cachedRow = Object.assign({}, row);
+            delete cachedRow.deltaPow;
+            delete cachedRow.deltaHwi;
+            delete cachedRow.h;
+            delete cachedRow.hwiAdj;
+            cache.set(makeSweepPointKey(params), cachedRow);
+        }
+    }
+    return cache;
+}
+
+function applySweepBaseline(rows, values) {
+    const baseline = rows.find((row) => row.value === 0 && row.success);
+    if (!baseline)
+        return;
+
+    for (const row of rows) {
+        if (!row.success)
+            continue;
+        row.deltaPow = row.powYard - baseline.powYard;
+        row.deltaHwi = row.hwi - baseline.hwi;
+        row.h = row.value !== 0 ? row.deltaPow / row.value : null;
+        row.hwiAdj = row.value !== 0 ? -(row.deltaHwi / row.value) : null;
+    }
+}
+
+async function runCachedSweepOrientation(var1, var2, fixedParams, shared, cache, statusPrefix) {
+    const values1 = generateRange(var1.start, var1.end, var1.freq);
+    const values2 = var2 ? generateRange(var2.start, var2.end, var2.freq) : [null];
+    const blocks = [];
+    let success = 0, failure = 0;
+    let completed = 0;
+    const total = values1.length * values2.length;
+
+    for (const value2 of values2) {
+        const rows = [];
+        for (const value1 of values1) {
+            const params = Object.assign({}, fixedParams, {
+                [var1.def.key]: value1,
+            });
+            if (var2)
+                params[var2.def.key] = value2;
+
+            const cached = cache.get(makeSweepPointKey(params));
+            const row = cached
+                ? Object.assign({}, cached, { value: value1 })
+                : { value: value1, success: false, steps: 0 };
+            rows.push(row);
+            if (row.success)
+                success++;
+            else
+                failure++;
+
+            completed++;
+            setExportStatus(`Reverse Order: กำลังคำนวณ ${completed}/${total} (${var1.def.label}${var2 ? ` × ${var2.def.label}` : ''}, ใช้ข้อมูล cache)`);
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+
+        applySweepBaseline(rows, values1);
+        blocks.push({ label: value2, rows, success: rows.filter((row) => row.success).length, failure: rows.filter((row) => !row.success).length });
+    }
+
+    return { var1, var2, values1, blocks, success, failure, fromCache: true };
 }
 
 // Main entry point wired to the "Export" button.
@@ -1854,13 +1970,13 @@ async function exportSweep() {
     }
 
     const var2 = readVar2();
+    const roundTrip = Boolean(var2);
 
     const includeSensitivity = document.getElementById('includeSensitivity')
         ? document.getElementById('includeSensitivity').checked
         : true;
 
     const fixedParams = buildFixedParams(shared, fixedFieldValues);
-    const values1 = generateRange(var1.start, var1.end, var1.freq);
     const representativeDistance = var1.type === 'distance' ? var1.start : fixedFieldValues.distance;
     shared.clubConf = computeClubConfLabel(shared, representativeDistance);
 
@@ -1869,52 +1985,19 @@ async function exportSweep() {
     // status text actually paints first.
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    let blocks = []; // [{ label: value2 or null, rows, success, failure }]
-    let totalSuccess = 0, totalFailure = 0;
+    const firstSweep = await runSweepOrientation(var1, var2, fixedParams, shared, includeSensitivity, '');
+    const sweeps = [firstSweep];
+    if (roundTrip)
+        sweeps.push(await runCachedSweepOrientation(var2, var1, fixedParams, shared,
+            buildSweepCache(firstSweep, fixedParams), 'Reverse Order'));
 
-    // Build the list of blocks (one per var2 value, or a single block when
-    // there's no second swept variable) up front -- both the parallel and
-    // serial paths below consume the same blockDefs.
-    const blockDefs = [];
-    let values2 = null;
-    if (var2) {
-        values2 = generateRange(var2.start, var2.end, var2.freq);
-        for (const v2 of values2) {
-            const blockParams = Object.assign({}, fixedParams);
-            blockParams[var2.def.key] = v2;
-            blockDefs.push({ label: v2, fixedParams: blockParams });
-        }
-    } else {
-        blockDefs.push({ label: null, fixedParams });
-    }
-
-    const totalPoints = values1.length * blockDefs.length;
-
-    // Spread the (potentially thousands of) shot solves across a pool of
-    // Workers -- one per CPU core -- instead of running them one at a time on
-    // the main thread. Falls back to the original single-threaded sweep if
-    // Workers aren't available, or if something goes wrong setting them up.
-    if (canUseSweepWorkers()) {
-        try {
-            blocks = await runSweepParallel(blockDefs, var1, values1, shared.dis, shared.aimX, includeSensitivity,
-                (completed, total) => setExportStatus(formatParallelSweepStatus(completed, total, var1, var2)));
-        } catch (err) {
-            console.warn('Multithreaded sweep failed, falling back to single-threaded sweep:', err);
-            blocks = await runSweepSerial(blockDefs, var1, var2, values1, shared, includeSensitivity);
-        }
-    } else {
-        blocks = await runSweepSerial(blockDefs, var1, var2, values1, shared, includeSensitivity);
-    }
-
-    for (const block of blocks) {
-        totalSuccess += block.success;
-        totalFailure += block.failure;
-    }
+    const totalSuccess = sweeps.reduce((total, sweep) => total + sweep.success, 0);
+    const totalFailure = sweeps.reduce((total, sweep) => total + sweep.failure, 0);
 
     setExportStatus('กำลังสร้างไฟล์ Excel...');
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    buildAndDownloadWorkbook({ shared, fixedFieldValues, var1, var2, values1, blocks, totalSuccess, totalFailure });
+    buildAndDownloadWorkbook({ shared, fixedFieldValues, sweeps, totalSuccess, totalFailure });
 
     setExportStatus(`เสร็จสิ้น! (สำเร็จ ${totalSuccess} / ล้มเหลว ${totalFailure})`);
 }
@@ -1957,7 +2040,8 @@ function hwiNorm(hwi, degree) {
 }
 
 function buildAndDownloadWorkbook(ctx) {
-    const { shared, fixedFieldValues, var1, var2, blocks, totalSuccess, totalFailure } = ctx;
+    const { shared, fixedFieldValues, sweeps, totalSuccess, totalFailure } = ctx;
+    const { var1, var2 } = sweeps[0];
     const aoa = [];
 
     aoa.push(['Summary', '']);
@@ -2014,49 +2098,63 @@ function buildAndDownloadWorkbook(ctx) {
         aoa.push([label, text]);
     aoa.push([]);
 
-    const baseHeader = [var1.def.label, 'Pow (%)', 'Pow (y)'];
-    const withBaseline = ['ΔPow', 'H'];
-    const midHeader = ['Height Pow Diff', 'AIM', 'HWI'];
-    const withBaselineHwi = ['ΔHWI'];
-    const tailHeader = ['HWI Norm.', 'HWI Adj', 'Height HWI Diff', 'Wind Pow Diff', 'Wind HWI Diff'];
+    const appendSweepTables = (sweep, isRoundTrip) => {
+        const sweepVar1 = sweep.var1;
+        const sweepVar2 = sweep.var2;
+        const baseHeader = [sweepVar1.def.label, 'Pow (%)', 'Pow (y)'];
+        const includeHeightAdjustments = sweepVar1.type === 'height';
+        const withBaseline = ['ΔPow', ...(includeHeightAdjustments ? ['H'] : [])];
+        const midHeader = ['Height Pow Diff', 'AIM', 'HWI'];
+        const withBaselineHwi = ['ΔHWI'];
+        const tailHeader = [
+            'HWI Norm.',
+            ...(includeHeightAdjustments ? ['HWI Adj'] : []),
+            'Height HWI Diff',
+            'Wind Pow Diff',
+            'Wind HWI Diff',
+        ];
+        const hasBaseline = sweep.blocks.some((b) => b.rows.some((r) => r.deltaPow !== undefined));
+        const header = hasBaseline
+            ? [...baseHeader, ...withBaseline, ...midHeader, ...withBaselineHwi, ...tailHeader]
+            : [...baseHeader, ...midHeader, ...tailHeader.filter((h) => h !== 'HWI Adj')];
 
-    const hasBaseline = blocks.some((b) => b.rows.some((r) => r.deltaPow !== undefined));
-    const header = hasBaseline
-        ? [...baseHeader, ...withBaseline, ...midHeader, ...withBaselineHwi, ...tailHeader]
-        : [...baseHeader, ...midHeader, ...tailHeader.filter((h) => h !== 'HWI Adj')];
+        if (isRoundTrip)
+            aoa.push(['Reverse Order', `${sweepVar1.def.label} and ${sweepVar2.def.label}`]);
 
-    // if (var2) {
-    //     aoa.push([var2.def.label, var2.start + ' to ' + var2.end]);
-    // }
+        for (const block of sweep.blocks) {
+            if (block.label !== null)
+                aoa.push([sweepVar2.def.label + ' : ' + block.label]);
 
-    for (const block of blocks) {
-        if (block.label !== null)
-            aoa.push([var2.def.label + ' : ' + block.label]);
-        
-        aoa.push(header);
+            aoa.push(header);
 
-        for (const row of block.rows) {
-            if (!row.success) {
-                aoa.push([row.value, ...header.slice(1).map(() => '-')]);
-                continue;
+            for (const row of block.rows) {
+                if (!row.success) {
+                    aoa.push([row.value, ...header.slice(1).map(() => '-')]);
+                    continue;
+                }
+                const norm = hwiNorm(row.hwi, fixedFieldValues.degree);
+                const line = [row.value, fmt(row.powPercent, 3), fmt(row.powYard, 3)];
+                if (hasBaseline) {
+                    line.push(row.deltaPow !== undefined ? fmt(row.deltaPow, 3) : '-');
+                    if (includeHeightAdjustments)
+                        line.push(row.h !== undefined && row.h !== null ? fmt(row.h, 4) : '-');
+                }
+                line.push(fmt(row.heightPowDiff, 4), fmt(row.aim, 4), fmt(row.hwi, 4));
+                if (hasBaseline)
+                    line.push(row.deltaHwi !== undefined ? fmt(row.deltaHwi, 4) : '-');
+                line.push(fmt(norm, 4));
+                if (hasBaseline && includeHeightAdjustments)
+                    line.push(row.hwiAdj !== undefined && row.hwiAdj !== null ? fmt(row.hwiAdj, 4) : '-');
+                line.push(fmt(row.heightHwiDiff, 4), fmt(row.windPowDiff, 4), fmt(row.windHwiDiff, 4));
+                aoa.push(line);
             }
-            const norm = hwiNorm(row.hwi, fixedFieldValues.degree);
-            const line = [row.value, fmt(row.powPercent, 3), fmt(row.powYard, 3)];
-            if (hasBaseline) {
-                line.push(row.deltaPow !== undefined ? fmt(row.deltaPow, 3) : '-');
-                line.push(row.h !== undefined && row.h !== null ? fmt(row.h, 4) : '-');
-            }
-            line.push(fmt(row.heightPowDiff, 4), fmt(row.aim, 4), fmt(row.hwi, 4));
-            if (hasBaseline)
-                line.push(row.deltaHwi !== undefined ? fmt(row.deltaHwi, 4) : '-');
-            line.push(fmt(norm, 4));
-            if (hasBaseline)
-                line.push(row.hwiAdj !== undefined && row.hwiAdj !== null ? fmt(row.hwiAdj, 4) : '-');
-            line.push(fmt(row.heightHwiDiff, 4), fmt(row.windPowDiff, 4), fmt(row.windHwiDiff, 4));
-            aoa.push(line);
+            aoa.push([]);
         }
-        aoa.push([]);
-    }
+    };
+
+    appendSweepTables(sweeps[0], false);
+    if (sweeps.length > 1)
+        appendSweepTables(sweeps[1], true);
 
     const ws = XLSX.utils.aoa_to_sheet(aoa);
 
@@ -2196,8 +2294,8 @@ function buildAndDownloadWorkbook(ctx) {
     }
 
     const tableHeaderRows = [];
-    const var1Format = var1.decimals > 0
-        ? `0.${'0'.repeat(var1.decimals)}`
+    const var1Format = (decimals) => decimals > 0
+        ? `0.${'0'.repeat(decimals)}`
         : '0';
     for (let row = 1; row <= aoa.length; row++) {
         if ((aoa[row - 1] || []).includes('Pow (%)'))
@@ -2206,6 +2304,7 @@ function buildAndDownloadWorkbook(ctx) {
 
     for (const headerRow of tableHeaderRows) {
         const headerValues = aoa[headerRow - 1];
+        const tableSweep = sweeps.find((sweep) => sweep.var1.def.label === headerValues[0]) || sweeps[0];
         for (let row = headerRow + 1; row <= aoa.length; row++) {
             const values = aoa[row - 1] || [];
             if (!values.length || values.includes('Pow (%)'))
@@ -2231,7 +2330,7 @@ function buildAndDownloadWorkbook(ctx) {
 
                 const header = headerValues[column - 1];
                 const format = column === 1
-                    ? var1Format
+                    ? var1Format(tableSweep.var1.decimals)
                     : header === 'Pow (%)' || header === 'Pow (y)' || header === 'ΔPow'
                     ? '0.000'
                     : '0.0000';

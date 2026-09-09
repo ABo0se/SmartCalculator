@@ -2167,8 +2167,17 @@ function buildAndDownloadWorkbook(ctx) {
             aoa.push(['Reverse Order', `${sweepVar1.def.label} and ${sweepVar2.def.label}`]);
 
         for (const block of sweep.blocks) {
-            if (block.label !== null)
-                aoa.push([sweepVar2.def.label + ' : ' + block.label]);
+            if (block.label !== null) {
+                const distance = sweepVar2.type === 'distance'
+                    ? block.label
+                    : fixedFieldValues.distance;
+                const blockLabel = sweepVar1.type === 'distance'
+                    ? `${sweepVar2.def.label} : ${block.label}`
+                    : `${sweepVar2.def.label} : ${block.label}, Dist (y) : ${distance}`;
+                aoa.push(['', blockLabel]);
+            } else if (sweepVar1.type !== 'distance') {
+                aoa.push(['', `Dist (y) : ${fixedFieldValues.distance}`]);
+            }
 
             aoa.push(header);
 
@@ -2226,7 +2235,7 @@ function buildAndDownloadWorkbook(ctx) {
         },
         blockLabel: {
             font: { sz: 11 },
-            alignment: { vertical: 'center', horizontal: 'right' },
+            alignment: { vertical: 'center', horizontal: 'left' },
         },
         body: {
             font: { sz: 11 },
@@ -2316,6 +2325,11 @@ function buildAndDownloadWorkbook(ctx) {
 
     ws['!merges'] = [];
 
+    ws['!merges'].push({
+        s: { r: 0, c: 0 },
+        e: { r: 0, c: lastColumn },
+    });
+
     const summaryStartRow = aoa.findIndex((row) => row[0] === 'Type' || row[0] === 'Type:') + 1;
     if (summaryStartRow > 0 && noteStartRow >= 0) {
         for (let row = summaryStartRow; row < noteStartRow; row++) {
@@ -2332,6 +2346,16 @@ function buildAndDownloadWorkbook(ctx) {
         for (let row = noteStartRow + 1; row <= aoa.length; row++) {
             if (!aoa[row - 1].length)
                 break;
+            ws['!merges'].push({
+                s: { r: row - 1, c: 1 },
+                e: { r: row - 1, c: lastColumn },
+            });
+        }
+    }
+
+    for (let row = 1; row <= aoa.length; row++) {
+        const values = aoa[row - 1] || [];
+        if (values.length === 2 && values[0] === '' && typeof values[1] === 'string') {
             ws['!merges'].push({
                 s: { r: row - 1, c: 1 },
                 e: { r: row - 1, c: lastColumn },
@@ -2356,10 +2380,10 @@ function buildAndDownloadWorkbook(ctx) {
             if (!values.length || values.includes('Pow (%)'))
                 break;
 
-            // A two-variable block label belongs to column A, but it sits
+            // A block label belongs to column B, but it sits
             // immediately above the table rows. Keep its dedicated style from
             // being overwritten by the numeric data-cell pass.
-            if (values.length === 1 && typeof values[0] === 'string' && values[0].includes(' : '))
+            if (values.length === 2 && values[0] === '' && typeof values[1] === 'string')
                 continue;
 
             for (let column = 1; column <= headerValues.length; column++) {
@@ -2386,11 +2410,11 @@ function buildAndDownloadWorkbook(ctx) {
     }
 
     // Reapply block-label styling after all table formatting has completed so
-    // rows such as "Wind : 5" always use their own style in column A.
+    // rows such as "Wind : 5" always use their own style in column B.
     for (let row = 1; row <= aoa.length; row++) {
         const values = aoa[row - 1] || [];
-        if (values.length === 1 && typeof values[0] === 'string' && values[0].includes(' : '))
-            applyStyle(row, 1, styles.blockLabel);
+        if (values.length === 2 && values[0] === '' && typeof values[1] === 'string')
+            applyStyle(row, 2, styles.blockLabel);
     }
 
     // Match the compact reference sheet: column A is wider, all data columns

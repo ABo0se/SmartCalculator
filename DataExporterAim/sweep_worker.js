@@ -48,6 +48,74 @@ self.onmessage = function (e) {
     const job = e.data;
 
     try {
+        if (job.type === 'cachedSweep') {
+            const cache = new Map(job.cacheEntries);
+            const blocks = [];
+
+            for (const block of job.blocks) {
+                const rows = [];
+                let success = 0;
+                let failure = 0;
+                for (const value1 of block.values1) {
+                    const params = Object.assign({}, job.fixedParams, {
+                        [job.var1Key]: value1,
+                    });
+                    if (job.var2Key)
+                        params[job.var2Key] = block.label;
+
+                    const cached = cache.get(makeSweepPointKey(params));
+                    const row = cached
+                        ? Object.assign({}, cached, { value: value1 })
+                        : { value: value1, success: false, steps: 0 };
+                    rows.push(row);
+                    if (row.success)
+                        success++;
+                    else
+                        failure++;
+                }
+                blocks.push({ label: block.label, rows, success, failure });
+            }
+
+            self.postMessage({
+                type: 'done',
+                taskId: job.taskId,
+                startIndex: job.startIndex,
+                blocks,
+            });
+            return;
+        }
+
+        if (job.type === 'heightAdjust') {
+            const rows = job.items.map((item) => {
+                const row = item.row;
+                const params = reviveFixedParams(item.params);
+                if (!row.success || !item.baseline)
+                    return row;
+
+                const height = params.height;
+                const currentHwiNorm = hwiNorm(row.hwi, params.wind, params.degree);
+                const baselineParams = Object.assign({}, params, { height: 0 });
+                const baselineHwiNorm = hwiNorm(item.baseline.hwi, baselineParams.wind, baselineParams.degree);
+                row.hwiNorm = currentHwiNorm;
+                row.deltaPow = row.powYard - item.baseline.powYard;
+                row.deltaHwi = row.hwi - item.baseline.hwi;
+                row.h = height !== 0 ? row.deltaPow / height : null;
+                row.hwiAdj = height !== 0 ? (currentHwiNorm - baselineHwiNorm) / height : null;
+                return row;
+            });
+
+            self.postMessage({
+                type: 'done',
+                taskId: job.taskId,
+                blockIndex: job.blockIndex,
+                startIndex: job.startIndex,
+                rows,
+                success: 0,
+                failure: 0,
+            });
+            return;
+        }
+
         const fixedParams = reviveFixedParams(job.fixedParams);
 
         // Mirrors the baseline computation sweepOneVariable() does on the main

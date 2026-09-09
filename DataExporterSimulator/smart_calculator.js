@@ -1787,9 +1787,61 @@ function buildSweepCache(sweep, fixedParams) {
     return cache;
 }
 
+async function runCachedSweepParallel(var1, var2, fixedParams, values1, values2, cache, statusPrefix) {
+    const workerCount = getSweepWorkerCount();
+    const cacheEntries = Array.from(cache.entries());
+    const blockCount = values2.length;
+    const chunkCount = Math.max(1, Math.min(workerCount, blockCount));
+    const chunkSize = Math.ceil(blockCount / chunkCount);
+    const tasks = [];
+
+    for (let start = 0; start < blockCount; start += chunkSize) {
+        tasks.push({
+            type: 'cachedSweep',
+            taskId: tasks.length,
+            startIndex: start,
+            cacheEntries,
+            fixedParams: makeCloneableFixedParams(fixedParams),
+            var1Key: var1.def.key,
+            var2Key: var2 ? var2.def.key : null,
+            blocks: values2.slice(start, start + chunkSize).map((label) => ({ label, values1 })),
+        });
+    }
+
+    const blockResults = new Array(blockCount);
+    const pool = new SweepWorkerPool(Math.min(workerCount, tasks.length));
+    try {
+        await pool.run(tasks, () => {}, (result) => {
+            for (let i = 0; i < result.blocks.length; i++)
+                blockResults[result.startIndex + i] = result.blocks[i];
+            if (statusPrefix)
+                setExportStatus(`${statusPrefix}: completed ${result.startIndex + result.blocks.length}/${blockCount} cached blocks`);
+        });
+    } finally {
+        pool.terminate();
+    }
+
+    let success = 0;
+    let failure = 0;
+    for (const block of blockResults) {
+        success += block.success;
+        failure += block.failure;
+    }
+    return { var1, var2, values1, blocks: blockResults, success, failure, fromCache: true };
+}
+
 async function runCachedSweepOrientation(var1, var2, fixedParams, shared, cache, statusPrefix) {
     const values1 = generateRange(var1.start, var1.end, var1.freq);
     const values2 = var2 ? generateRange(var2.start, var2.end, var2.freq) : [null];
+
+    if (canUseSweepWorkers()) {
+        try {
+            return await runCachedSweepParallel(var1, var2, fixedParams, values1, values2, cache, statusPrefix);
+        } catch (err) {
+            console.warn('Parallel cached sweep failed, falling back to single-threaded cache lookup:', err);
+        }
+    }
+
     const blocks = [];
     let success = 0, failure = 0;
     let completed = 0;
@@ -1870,7 +1922,8 @@ function getPowerUsedForDistanceAtHeightZero(params, distance) {
 // H and HWI Adj are always relative to the same shot solved at height 0m,
 // never relative to the first value of whichever variable happens to be swept.
 // This also applies when Height is fixed and another field is being swept.
-function applyHeightAdjustmentsToSweep(sweep, fixedParams, cache, dis, aimX) {
+async function applyHeightAdjustmentsToSweep(sweep, fixedParams, cache, dis, aimX) {
+    const items = [];
     for (const block of sweep.blocks) {
         for (const row of block.rows) {
             if (!row.success)
@@ -1891,16 +1944,56 @@ function applyHeightAdjustmentsToSweep(sweep, fixedParams, cache, dis, aimX) {
             if (!baseline)
                 continue;
 
-            const powerAtHeightZero = getPowerUsedForDistanceAtHeightZero(params, row.distance);
+            items.push({ row, params, baseline });
+        }
+    }
+
+    if (!items.length)
+        return;
+
+    if (!canUseSweepWorkers()) {
+        for (const item of items) {
+            const powerAtHeightZero = getPowerUsedForDistanceAtHeightZero(item.params, item.row.distance);
             if (powerAtHeightZero === null)
                 continue;
-
-            row.deltaPow = row.powerUsedYard - powerAtHeightZero;
-            row.deltaHwi = row.hwi - baseline.hwi;
-            row.h = height !== 0 ? row.deltaPow / height : null;
-            const baselineHwiNorm = hwiNorm(baseline.hwi, baselineParams.wind, baselineParams.degree);
-            row.hwiAdj = height !== 0 ? (currentHwiNorm - baselineHwiNorm) / height : null;
+            const height = item.params.height;
+            const currentHwiNorm = hwiNorm(item.row.hwi, item.params.wind, item.params.degree);
+            const baselineParams = Object.assign({}, item.params, { height: 0 });
+            const baselineHwiNorm = hwiNorm(item.baseline.hwi, baselineParams.wind, baselineParams.degree);
+            item.row.hwiNorm = currentHwiNorm;
+            item.row.deltaPow = item.row.powerUsedYard - powerAtHeightZero;
+            item.row.deltaHwi = item.row.hwi - item.baseline.hwi;
+            item.row.h = height !== 0 ? item.row.deltaPow / height : null;
+            item.row.hwiAdj = height !== 0 ? (currentHwiNorm - baselineHwiNorm) / height : null;
         }
+        return;
+    }
+
+    const workerCount = getSweepWorkerCount();
+    const chunkSize = Math.ceil(items.length / workerCount);
+    const tasks = [];
+    for (let start = 0; start < items.length; start += chunkSize) {
+        tasks.push({
+            type: 'heightAdjust',
+            taskId: tasks.length,
+            blockIndex: 0,
+            startIndex: start,
+            items: items.slice(start, start + chunkSize).map((item) => ({
+                row: item.row,
+                params: makeCloneableFixedParams(item.params),
+                baseline: item.baseline,
+            })),
+        });
+    }
+
+    const pool = new SweepWorkerPool(Math.min(workerCount, tasks.length));
+    try {
+        await pool.run(tasks, () => {}, (result) => {
+            for (let i = 0; i < result.rows.length; i++)
+                Object.assign(items[result.startIndex + i].row, result.rows[i]);
+        });
+    } finally {
+        pool.terminate();
     }
 }
 
@@ -1932,13 +2025,13 @@ async function exportSweep() {
 
     const firstSweep = await runSweepOrientation(var1, var2, fixedParams, shared, includeSensitivity, '');
     const sweepCache = buildSweepCache(firstSweep, fixedParams);
-    applyHeightAdjustmentsToSweep(firstSweep, fixedParams, sweepCache, shared.dis, shared.aimX);
+    await applyHeightAdjustmentsToSweep(firstSweep, fixedParams, sweepCache, shared.dis, shared.aimX);
     const sweeps = [firstSweep];
     if (roundTrip)
         sweeps.push(await runCachedSweepOrientation(var2, var1, fixedParams, shared,
             sweepCache, 'Reverse Order'));
     if (roundTrip)
-        applyHeightAdjustmentsToSweep(sweeps[1], fixedParams, sweepCache, shared.dis, shared.aimX);
+        await applyHeightAdjustmentsToSweep(sweeps[1], fixedParams, sweepCache, shared.dis, shared.aimX);
 
     const totalSuccess = sweeps.reduce((total, sweep) => total + sweep.success, 0);
     const totalFailure = sweeps.reduce((total, sweep) => total + sweep.failure, 0);
@@ -1998,6 +2091,7 @@ function buildAndDownloadWorkbook(ctx) {
 
     aoa.push(['Summary', '']);
     aoa.push([]);
+    aoa.push(['Mode:', 'Shot Simulation']);
     aoa.push(['ClubConf:', shared.clubConf]);
     aoa.push(['ClubType:', shared.clubLabel]);
     aoa.push(['ShotType:', shared.shotLabel]);
@@ -2079,19 +2173,19 @@ function buildAndDownloadWorkbook(ctx) {
         ];
 
         if (isRoundTrip)
-            aoa.push(['Reverse Order', `${sweepVar1.def.label} and ${sweepVar2.def.label}`]);
+            aoa.push(['', `Reverse Order : ${sweepVar1.def.label} and ${sweepVar2.def.label}`]);
 
         for (const block of sweep.blocks) {
             if (block.label !== null) {
                 const powerUsed = sweepVar2.type === 'power_used'
                     ? block.label
                     : fixedFieldValues.power_used;
-                const blockLabel = sweepVar1.type === 'power_used'
+                const blockLabel = sweepVar2.type === 'power_used'
                     ? `${sweepVar2.def.label} : ${block.label}`
-                    : `${sweepVar2.def.label} : ${block.label}, Pow (y) : ${powerUsed}`;
+                    : `${sweepVar2.def.label} : ${block.label}, Power : ${powerUsed}`;
                 aoa.push(['', blockLabel]);
             } else if (sweepVar1.type !== 'power_used') {
-                aoa.push(['', `Pow (y): ${fixedFieldValues.power_used}`]);
+                aoa.push(['', `Power : ${fixedFieldValues.power_used}`]);
             }
 
             aoa.push(header);
@@ -2247,6 +2341,15 @@ function buildAndDownloadWorkbook(ctx) {
     });
 
     const summaryStartRow = aoa.findIndex((row) => row[0] === 'Type' || row[0] === 'Type:') + 1;
+    for (let row = 2; row < summaryStartRow; row++) {
+        if (aoa[row - 1].length > 1 && aoa[row - 1][1] !== undefined && aoa[row - 1][1] !== '') {
+            ws['!merges'].push({
+                s: { r: row - 1, c: 1 },
+                e: { r: row - 1, c: lastColumn },
+            });
+        }
+    }
+
     if (summaryStartRow > 0 && noteStartRow >= 0) {
         for (let row = summaryStartRow; row < noteStartRow; row++) {
             if (aoa[row - 1].length > 1 && aoa[row - 1][1] !== undefined && aoa[row - 1][1] !== '') {

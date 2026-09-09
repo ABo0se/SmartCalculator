@@ -2266,15 +2266,15 @@ function buildAndDownloadWorkbook(ctx) {
 
         for (const block of sweep.blocks) {
             if (block.label !== null) {
-                const distance = sweepVar2.type === 'distance'
+                const distance = (sweepVar1.type === 'distance' || sweepVar2.type === 'distance')
                     ? block.label
                     : fixedFieldValues.distance;
-                const blockLabel = sweepVar2.type === 'distance'
+                const blockLabel = (sweepVar1.type === 'distance' || sweepVar2.type === 'distance')
                     ? `${sweepVar2.def.label} : ${block.label}`
-                    : `${sweepVar2.def.label} : ${block.label}, Dist (y) : ${distance}`;
+                    : `${sweepVar2.def.label} : ${block.label}, Distance : ${distance}`;
                 aoa.push(['', blockLabel]);
             } else if (sweepVar1.type !== 'distance') {
-                aoa.push(['', `Dist (y) : ${fixedFieldValues.distance}`]);
+                aoa.push(['', `Distance : ${fixedFieldValues.distance}`]);
             }
 
             aoa.push(header);

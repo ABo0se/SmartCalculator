@@ -2177,10 +2177,10 @@ function buildAndDownloadWorkbook(ctx) {
 
         for (const block of sweep.blocks) {
             if (block.label !== null) {
-                const powerUsed = sweepVar2.type === 'power_used'
+                const powerUsed = (sweepVar1.type === 'power_used' || sweepVar2.type === 'power_used')
                     ? block.label
                     : fixedFieldValues.power_used;
-                const blockLabel = sweepVar2.type === 'power_used'
+                const blockLabel = (sweepVar1.type === 'power_used' || sweepVar2.type === 'power_used')
                     ? `${sweepVar2.def.label} : ${block.label}`
                     : `${sweepVar2.def.label} : ${block.label}, Power : ${powerUsed}`;
                 aoa.push(['', blockLabel]);

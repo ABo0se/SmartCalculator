@@ -1191,7 +1191,7 @@ function toDisplayRow(input_values, solved, dis, aimX) {
     return { powPercent, powYard, powerUsedYard, distance: r.distance, hwi, aim };
 }
 
-// Local sensitivity of Pow(y) and HWI to a given field, evaluated at the current point
+// Local sensitivity of Distance, Pow(y), and HWI to a given field, evaluated at the current point
 // via a small central-difference perturbation (default step: 0.1 unit). Pow(y) is
 // recalculated to preserve the current row's simulated distance.
 //
@@ -1218,9 +1218,24 @@ function localDerivative(baseParams, dis, aimX, key, targetDistance) {
     const powerM = getPowerUsedForDistance(minus, targetDistance);
 
     return {
+        distance: (rowP.distance - rowM.distance) / (2 * eps),
         pow: powerP !== null && powerM !== null ? (powerP - powerM) / (2 * eps) : null,
         hwi: (rowP.hwi - rowM.hwi) / (2 * eps),
     };
+}
+
+function powerDistanceDerivative(baseParams, dis, aimX) {
+    const eps = 0.1;
+    const plus = Object.assign({}, baseParams, { power_used: baseParams.power_used + eps });
+    const minus = Object.assign({}, baseParams, { power_used: baseParams.power_used - eps });
+    const rp = solveAim(plus);
+    const rm = solveAim(minus);
+    if (!rp.success || !rm.success)
+        return null;
+
+    const rowP = toDisplayRow(plus, rp, dis, aimX);
+    const rowM = toDisplayRow(minus, rm, dis, aimX);
+    return (rowP.distance - rowM.distance) / (2 * eps);
 }
 
 // -------------------------------------------------------------------------------------
@@ -1249,10 +1264,13 @@ function computeSweepRow(fixedParams, varKey, value, dis, aimX, baseline, includ
     row.hwi = disp.hwi;
 
     if (includeSensitivity) {
+        row.powDistDiff = powerDistanceDerivative(params, dis, aimX);
         const heightDeriv = localDerivative(params, dis, aimX, 'height', disp.distance);
         const windDeriv = localDerivative(params, dis, aimX, 'wind', disp.distance);
+        row.heightDistDiff = heightDeriv ? heightDeriv.distance : null;
         row.heightPowDiff = heightDeriv ? heightDeriv.pow : null;
         row.heightHwiDiff = heightDeriv ? -heightDeriv.hwi : null;
+        row.windDistDiff = windDeriv ? windDeriv.distance : null;
         row.windPowDiff = windDeriv ? windDeriv.pow : null;
         row.windHwiDiff = windDeriv ? windDeriv.hwi : null;
     }
@@ -1938,8 +1956,11 @@ async function exportSweep() {
 // by the reference exports (both the single-variable and the two-variable ones).
 // -------------------------------------------------------------------------------------
 const NOTE_LINES = [
+    ['Pow Dist Diff', 'Distance(y) change per 1 yard of Pow(y).'],
+    ['Height Dist Diff', 'Distance(y) change per 1m on current elevation.'],
     ['Height Pow Diff', 'Pow(y) change per 1m on current elevation.'],
     ['Height HWI Diff', 'HWI(pb) change per 1m on current elevation.'],
+    ['Wind Dist Diff', 'Distance(y) change per 1m/s on current wind magnitude and angle.'],
     ['Wind Pow Diff', 'Pow(y) change per 1m/s on current wind magnitude and angle.'],
     ['Wind HWI Diff', 'HWI(pb) change per 1m/s on current wind magnitude and angle.'],
     ['HWI Norm.', 'HWI(pb) normalized by effective 1m/s crosswind.'],
@@ -2035,12 +2056,14 @@ function buildAndDownloadWorkbook(ctx) {
         const baseHeader = [sweepVar1.def.label, 'Pow (%)', 'Distance (y)'];
         const includeHeightAdjustments = true;
         const withBaseline = ['ΔPow'];
-        const midHeader = ['Height Pow Diff', 'AIM', 'HWI'];
+        const midHeader = ['Pow Dist Diff', 'Height Dist Diff', 'Height Pow Diff'];
+        const aftermidHeader = ['AIM', 'HWI'];
         const withBaselineHwi = ['ΔHWI'];
         const tailHeader = [
             'HWI Norm.',
             ...(includeHeightAdjustments ? ['HWI Adj'] : []),
             'Height HWI Diff',
+            'Wind Dist Diff',
             'Wind Pow Diff',
             'Wind HWI Diff',
         ];
@@ -2048,8 +2071,9 @@ function buildAndDownloadWorkbook(ctx) {
         const header = [
             ...baseHeader,
             ...(hasBaseline ? withBaseline : []),
-            ...(includeHeightAdjustments ? ['H'] : []),
             ...midHeader,
+            ...(includeHeightAdjustments ? ['H'] : []),
+            ...aftermidHeader,
             ...(hasBaseline ? withBaselineHwi : []),
             ...tailHeader,
         ];
@@ -2074,15 +2098,16 @@ function buildAndDownloadWorkbook(ctx) {
                 const line = [row.value, fmt(row.powPercent, 3), fmt(row.powYard, 3)];
                 if (hasBaseline)
                     line.push(row.deltaPow !== undefined ? fmt(row.deltaPow, 3) : '-');
+                line.push(fmt(row.powDistDiff, 4), fmt(row.heightDistDiff, 4), fmt(row.heightPowDiff, 4));
                 if (includeHeightAdjustments)
                     line.push(row.h !== undefined && row.h !== null ? fmt(row.h, 4) : '-');
-                line.push(fmt(row.heightPowDiff, 4), fmt(row.aim, 4), fmt(row.hwi, 4));
+                line.push(fmt(row.aim, 4), fmt(row.hwi, 4));
                 if (hasBaseline)
                     line.push(row.deltaHwi !== undefined ? fmt(row.deltaHwi, 4) : '-');
                 line.push(fmt(norm, 4));
                 if (includeHeightAdjustments)
                     line.push(row.hwiAdj !== undefined && row.hwiAdj !== null ? fmt(row.hwiAdj, 4) : '-');
-                line.push(fmt(row.heightHwiDiff, 4), fmt(row.windPowDiff, 4), fmt(row.windHwiDiff, 4));
+                line.push(fmt(row.heightHwiDiff, 4), fmt(row.windDistDiff, 4), fmt(row.windPowDiff, 4), fmt(row.windHwiDiff, 4));
                 aoa.push(line);
             }
             aoa.push([]);

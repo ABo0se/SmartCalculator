@@ -2132,8 +2132,15 @@ function buildAndDownloadWorkbook(ctx) {
     aoa.push(['Summary', '']);
     aoa.push([]);
     aoa.push(['Mode:', 'Shot Simulation']);
-    aoa.push(['ClubConf:', shared.clubConf]);
+    aoa.push(['Configs:', 'Power : ' + shared.power_player.pwr + 
+                          ' Ring : ' + shared.power_player.options.auxpart +
+                          ' Lolo : ' + shared.power_player.options.ps_card])
+    aoa.push(['ClubConf:', formatClubConf(shared.power_player.pwr, 
+                                    shared.power_player.options.auxpart, 
+                                    shared.power_player.options.ps_card)]);
+    aoa.push([]);
     aoa.push(['ClubType:', shared.clubLabel]);
+    aoa.push(['ShotConf:', shared.clubConf]);
     aoa.push(['ShotType:', shared.shotLabel]);
     aoa.push(['PowerShot:', shared.psLabel]);
     aoa.push([]);
@@ -2503,6 +2510,11 @@ function calcMycella(el) {
     document.getElementById('slopebreak').value = ((slope_real * x_slope) * slope_side).toFixed(4);
 }
 
+function formatClubConf(power, ring, lolo) {
+    const drivecal = 200 + power * 2 + ring;
+    return `${drivecal}+${lolo}`;
+}
+
 function checkdrive(el) {
 
     const power_value = checkValidInput(document.querySelector('#power').value);
@@ -2511,7 +2523,7 @@ function checkdrive(el) {
 
     const drivecal = 200 + power_value * 2 + ring_value;
 
-    document.getElementById('current_drive').value = `${drivecal}+${lolo_value}`;
+    document.getElementById('current_drive').value = formatClubConf(power_value, ring_value, lolo_value);
 
 }
 

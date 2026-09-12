@@ -1764,6 +1764,22 @@ function getSharedShotConfig() {
     return { power_player, club_info, shot, power_shot, dis, aimX, clubLabel, shotLabel, psLabel };
 }
 
+// "ClubConf" summary label, e.g. "266+0" — the club's total effective power range for
+// a normal shot, plus whatever extra a power-shot card would add (0 unless a
+// power-shot-only card stat is configured, since that only applies when Power Shot is
+// actually used). Needs a representative distance because PW/SW ranges are
+// distance-bucketed; any distance in the sweep works since it only changes which
+// bucket a PW/SW shot falls into, not the wood/iron formula used by default clubs.
+function computeClubConfLabel(shared, representativeDistance) {
+    const vclub = new Club();
+    vclub.init(shared.club_info);
+    vclub.type_distance = calculeTypeDistance(representativeDistance);
+    const normalRange = vclub.getRange(shared.power_player.options, shared.power_player.pwr, POWER_SHOT_FACTORY.NO_POWER_SHOT);
+    const psRange = vclub.getRange(shared.power_player.options, shared.power_player.pwr, shared.power_shot);
+    const extra = Math.round((psRange - normalRange) * 100) / 100;
+    return `${Math.round(normalRange)}+${extra}`;
+}
+
 // Fixed ("Init Val") value for every field, taken from each field's "start" (…1) input,
 // same convention the single-variable exporter already used.
 function getFixedFieldValues() {
@@ -2208,9 +2224,15 @@ function buildAndDownloadWorkbook(ctx) {
     aoa.push(['Summary', '']);
     aoa.push([]);
     aoa.push(['Mode:', 'Answer Finder']);
-    aoa.push(['ClubConf:', formatClubConf()])
-    aoa.push(['ShotConf:', shared.clubConf]);
+    aoa.push(['Configs:', 'Power : ' + shared.power_player.pwr + 
+                          ' Ring : ' + shared.power_player.options.auxpart +
+                          ' Lolo : ' + shared.power_player.options.ps_card])
+    aoa.push(['ClubConf:', formatClubConf(shared.power_player.pwr, 
+                                    shared.power_player.options.auxpart, 
+                                    shared.power_player.options.ps_card)]);
+    aoa.push([]);
     aoa.push(['ClubType:', shared.clubLabel]);
+    aoa.push(['ShotConf:', shared.clubConf]);
     aoa.push(['ShotType:', shared.shotLabel]);
     aoa.push(['PowerShot:', shared.psLabel]);
     aoa.push([]);

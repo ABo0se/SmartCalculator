@@ -1352,9 +1352,20 @@ function makeCloneableFixedParams(fixedParams) {
     });
 }
 
-function getSweepWorkerCount() {
+function getSweepWorkerCount(workItems = Infinity) {
     const hc = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 4;
-    return Math.max(1, Math.min(hc, 8));
+    return Math.max(1, Math.min(hc, workItems));
+}
+
+function throttleSweepStatus(onStatus, interval = 100) {
+    let lastUpdate = 0;
+    return (completed, total) => {
+        const now = performance.now();
+        if (completed === total || now - lastUpdate >= interval) {
+            lastUpdate = now;
+            onStatus(completed, total);
+        }
+    };
 }
 
 function canUseSweepWorkers() {
@@ -1438,9 +1449,10 @@ class SweepWorkerPool {
 // { label: null, fixedParams } entry when there's no second swept variable.
 // Returns the same shape exportSweep()/buildAndDownloadWorkbook() already
 // expect: [{ label, rows, success, failure }].
-async function runSweepParallel(blockDefs, var1, values1, dis, aimX, includeSensitivity, onStatus) {
-    const workerCount = getSweepWorkerCount();
-    const pool = new SweepWorkerPool(workerCount);
+async function runSweepParallel(blockDefs, var1, values1, dis, aimX, includeSensitivity, onStatus, sharedPool) {
+    const workerCount = getSweepWorkerCount(values1.length * blockDefs.length);
+    const pool = sharedPool || new SweepWorkerPool(workerCount);
+    const ownsPool = !sharedPool;
 
     const totalPoints = values1.length * blockDefs.length;
     let completedPoints = 0;
@@ -1463,6 +1475,14 @@ async function runSweepParallel(blockDefs, var1, values1, dis, aimX, includeSens
         // side. sweep_worker.js's reviveFixedParams() puts it back once the
         // (now function-free) clone lands there.
         const cloneableFixedParams = makeCloneableFixedParams(blockDefs[b].fixedParams);
+        let baseline = null;
+        if (needBaseline) {
+            const baseParams = Object.assign({}, blockDefs[b].fixedParams);
+            baseParams[var1.def.key] = 0;
+            const solvedBase = solveAim(baseParams);
+            if (solvedBase.success)
+                baseline = toDisplayRow(baseParams, solvedBase, dis, aimX);
+        }
         for (let start = 0; start < values1.length; start += chunkSize) {
             tasks.push({
                 taskId: taskId++,
@@ -1474,12 +1494,13 @@ async function runSweepParallel(blockDefs, var1, values1, dis, aimX, includeSens
                 dis,
                 aimX,
                 includeSensitivity,
-                needBaseline,
+                baseline,
             });
         }
     }
 
     try {
+        const reportStatus = throttleSweepStatus(onStatus);
         await pool.run(
             tasks,
             (id, completed) => {
@@ -1487,7 +1508,7 @@ async function runSweepParallel(blockDefs, var1, values1, dis, aimX, includeSens
                 completedPoints += (completed - prev);
                 taskLastCompleted.set(id, completed);
                 if (onStatus)
-                    onStatus(completedPoints, totalPoints);
+                    reportStatus(completedPoints, totalPoints);
             },
             (result) => {
                 const rows = blockRows[result.blockIndex];
@@ -1498,7 +1519,8 @@ async function runSweepParallel(blockDefs, var1, values1, dis, aimX, includeSens
             }
         );
     } finally {
-        pool.terminate();
+        if (ownsPool)
+            pool.terminate();
     }
 
     return blockDefs.map((def, b) => ({
@@ -1717,7 +1739,7 @@ function setExportStatus(msg) {
     if (el) el.innerText = msg;
 }
 
-async function runSweepOrientation(var1, var2, fixedParams, shared, includeSensitivity, statusPrefix) {
+async function runSweepOrientation(var1, var2, fixedParams, shared, includeSensitivity, statusPrefix, sharedPool) {
     const values1 = generateRange(var1.start, var1.end, var1.freq);
     const blockDefs = [];
     let values2 = null;
@@ -1744,7 +1766,7 @@ async function runSweepOrientation(var1, var2, fixedParams, shared, includeSensi
     if (canUseSweepWorkers()) {
         try {
             blocks = await runSweepParallel(blockDefs, var1, values1, shared.dis, shared.aimX,
-                includeSensitivity, updateStatus);
+                includeSensitivity, updateStatus, sharedPool);
         } catch (err) {
             console.warn('Multithreaded sweep failed, falling back to single-threaded sweep:', err);
             blocks = await runSweepSerial(blockDefs, var1, var2, values1, shared, includeSensitivity);
@@ -1787,8 +1809,8 @@ function buildSweepCache(sweep, fixedParams) {
     return cache;
 }
 
-async function runCachedSweepParallel(var1, var2, fixedParams, values1, values2, cache, statusPrefix) {
-    const workerCount = getSweepWorkerCount();
+async function runCachedSweepParallel(var1, var2, fixedParams, values1, values2, cache, statusPrefix, sharedPool) {
+    const workerCount = getSweepWorkerCount(values1.length * values2.length);
     const cacheEntries = Array.from(cache.entries());
     const blockCount = values2.length;
     const chunkCount = Math.max(1, Math.min(workerCount, blockCount));
@@ -1809,16 +1831,22 @@ async function runCachedSweepParallel(var1, var2, fixedParams, values1, values2,
     }
 
     const blockResults = new Array(blockCount);
-    const pool = new SweepWorkerPool(Math.min(workerCount, tasks.length));
+    const pool = sharedPool || new SweepWorkerPool(Math.min(workerCount, tasks.length));
+    const ownsPool = !sharedPool;
+    const reportCachedStatus = statusPrefix
+        ? throttleSweepStatus((completed, total) =>
+            setExportStatus(`${statusPrefix}: completed ${completed}/${total} cached blocks`))
+        : null;
     try {
         await pool.run(tasks, () => {}, (result) => {
             for (let i = 0; i < result.blocks.length; i++)
                 blockResults[result.startIndex + i] = result.blocks[i];
-            if (statusPrefix)
-                setExportStatus(`${statusPrefix}: completed ${result.startIndex + result.blocks.length}/${blockCount} cached blocks`);
+            if (reportCachedStatus)
+                reportCachedStatus(result.startIndex + result.blocks.length, blockCount);
         });
     } finally {
-        pool.terminate();
+        if (ownsPool)
+            pool.terminate();
     }
 
     let success = 0;
@@ -1830,13 +1858,13 @@ async function runCachedSweepParallel(var1, var2, fixedParams, values1, values2,
     return { var1, var2, values1, blocks: blockResults, success, failure, fromCache: true };
 }
 
-async function runCachedSweepOrientation(var1, var2, fixedParams, shared, cache, statusPrefix) {
+async function runCachedSweepOrientation(var1, var2, fixedParams, shared, cache, statusPrefix, sharedPool) {
     const values1 = generateRange(var1.start, var1.end, var1.freq);
     const values2 = var2 ? generateRange(var2.start, var2.end, var2.freq) : [null];
 
     if (canUseSweepWorkers()) {
         try {
-            return await runCachedSweepParallel(var1, var2, fixedParams, values1, values2, cache, statusPrefix);
+            return await runCachedSweepParallel(var1, var2, fixedParams, values1, values2, cache, statusPrefix, sharedPool);
         } catch (err) {
             console.warn('Parallel cached sweep failed, falling back to single-threaded cache lookup:', err);
         }
@@ -1922,7 +1950,7 @@ function getPowerUsedForDistanceAtHeightZero(params, distance) {
 // H and HWI Adj are always relative to the same shot solved at height 0m,
 // never relative to the first value of whichever variable happens to be swept.
 // This also applies when Height is fixed and another field is being swept.
-async function applyHeightAdjustmentsToSweep(sweep, fixedParams, cache, dis, aimX) {
+async function applyHeightAdjustmentsToSweep(sweep, fixedParams, cache, dis, aimX, sharedPool) {
     const items = [];
     for (const block of sweep.blocks) {
         for (const row of block.rows) {
@@ -1969,7 +1997,7 @@ async function applyHeightAdjustmentsToSweep(sweep, fixedParams, cache, dis, aim
         return;
     }
 
-    const workerCount = getSweepWorkerCount();
+    const workerCount = getSweepWorkerCount(items.length);
     const chunkSize = Math.ceil(items.length / workerCount);
     const tasks = [];
     for (let start = 0; start < items.length; start += chunkSize) {
@@ -1986,14 +2014,16 @@ async function applyHeightAdjustmentsToSweep(sweep, fixedParams, cache, dis, aim
         });
     }
 
-    const pool = new SweepWorkerPool(Math.min(workerCount, tasks.length));
+    const pool = sharedPool || new SweepWorkerPool(Math.min(workerCount, tasks.length));
+    const ownsPool = !sharedPool;
     try {
         await pool.run(tasks, () => {}, (result) => {
             for (let i = 0; i < result.rows.length; i++)
                 Object.assign(items[result.startIndex + i].row, result.rows[i]);
         });
     } finally {
-        pool.terminate();
+        if (ownsPool)
+            pool.terminate();
     }
 }
 
@@ -2023,25 +2053,35 @@ async function exportSweep() {
     // status text actually paints first.
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    const firstSweep = await runSweepOrientation(var1, var2, fixedParams, shared, includeSensitivity, '');
-    const sweepCache = buildSweepCache(firstSweep, fixedParams);
-    await applyHeightAdjustmentsToSweep(firstSweep, fixedParams, sweepCache, shared.dis, shared.aimX);
-    const sweeps = [firstSweep];
-    if (roundTrip)
-        sweeps.push(await runCachedSweepOrientation(var2, var1, fixedParams, shared,
-            sweepCache, 'Reverse Order'));
-    if (roundTrip)
-        await applyHeightAdjustmentsToSweep(sweeps[1], fixedParams, sweepCache, shared.dis, shared.aimX);
+    const values1Count = generateRange(var1.start, var1.end, var1.freq).length;
+    const values2Count = var2 ? generateRange(var2.start, var2.end, var2.freq).length : 1;
+    const workerPool = canUseSweepWorkers()
+        ? new SweepWorkerPool(getSweepWorkerCount(values1Count * values2Count))
+        : null;
+    try {
+        const firstSweep = await runSweepOrientation(var1, var2, fixedParams, shared, includeSensitivity, '', workerPool);
+        const sweepCache = buildSweepCache(firstSweep, fixedParams);
+        await applyHeightAdjustmentsToSweep(firstSweep, fixedParams, sweepCache, shared.dis, shared.aimX, workerPool);
+        const sweeps = [firstSweep];
+        if (roundTrip)
+            sweeps.push(await runCachedSweepOrientation(var2, var1, fixedParams, shared,
+                sweepCache, 'Reverse Order', workerPool));
+        if (roundTrip)
+            await applyHeightAdjustmentsToSweep(sweeps[1], fixedParams, sweepCache, shared.dis, shared.aimX, workerPool);
 
-    const totalSuccess = sweeps.reduce((total, sweep) => total + sweep.success, 0);
-    const totalFailure = sweeps.reduce((total, sweep) => total + sweep.failure, 0);
+        const totalSuccess = sweeps.reduce((total, sweep) => total + sweep.success, 0);
+        const totalFailure = sweeps.reduce((total, sweep) => total + sweep.failure, 0);
 
-    setExportStatus('กำลังสร้างไฟล์ Excel...');
-    await new Promise((resolve) => setTimeout(resolve, 0));
+        setExportStatus('กำลังสร้างไฟล์ Excel...');
+        await new Promise((resolve) => setTimeout(resolve, 0));
 
-    buildAndDownloadWorkbook({ shared, fixedFieldValues, sweeps, totalSuccess, totalFailure });
+        buildAndDownloadWorkbook({ shared, fixedFieldValues, sweeps, totalSuccess, totalFailure });
 
-    setExportStatus(`เสร็จสิ้น! (สำเร็จ ${totalSuccess} / ล้มเหลว ${totalFailure})`);
+        setExportStatus(`เสร็จสิ้น! (สำเร็จ ${totalSuccess} / ล้มเหลว ${totalFailure})`);
+    } finally {
+        if (workerPool)
+            workerPool.terminate();
+    }
 }
 
 // -------------------------------------------------------------------------------------

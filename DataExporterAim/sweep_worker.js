@@ -122,14 +122,7 @@ self.onmessage = function (e) {
         // thread: solved once (per task here, redundantly across the chunks of
         // the same block, but it's a single cheap solve and always yields the
         // same deterministic result) whenever the swept range spans 0.
-        let baseline = null;
-        if (job.needBaseline) {
-            const baseParams = Object.assign({}, fixedParams);
-            baseParams[job.varKey] = 0;
-            const solvedBase = solveAim(baseParams);
-            if (solvedBase.success)
-                baseline = toDisplayRow(baseParams, solvedBase, job.dis, job.aimX);
-        }
+        const baseline = job.baseline || null;
 
         const rows = [];
         let success = 0, failure = 0;

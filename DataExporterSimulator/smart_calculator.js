@@ -106,6 +106,19 @@ class Vector3D {
     clone() {
         return new Vector3D(this.x, this.y, this.z);
     }
+
+    // Non-allocating equivalent of `this.x = other.x; ...` in one call.
+    // Used where a Vector3D field is refreshed very frequently (e.g. once per
+    // physics step) and already owns a Vector3D instance, so there's no need
+    // to throw that instance away and allocate a fresh clone() every time.
+    // Produces numerically identical results to `field = other.clone()`.
+    copyFrom(other) {
+        this.x = other.x;
+        this.y = other.y;
+        this.z = other.z;
+
+        return this;
+    }
 }
 
 const TYPE_DISTANCE = {
@@ -181,9 +194,9 @@ class Ball {
 
         let cpy = this;
 
-        cpy.position = other.position.clone();
-        cpy.slope = other.slope.clone();
-        cpy.velocity = other.velocity.clone();
+        cpy.position.copyFrom(other.position);
+        cpy.slope.copyFrom(other.slope);
+        cpy.velocity.copyFrom(other.velocity);
         cpy.state_process = other.state_process;
         cpy.max_height = other.max_height;
         cpy.spin = other.spin;
@@ -437,8 +450,20 @@ class Wind {
     wind = 0;
     degree = 0;
 
+    // Scratch vector reused across calls. getWind() is only ever called from
+    // applyForce(), once per physics step, and its result is consumed
+    // immediately (multiplied/added into a local accumulator) and never
+    // retained -- so handing back the same instance each time (with fresh
+    // values) is numerically identical to allocating a new one, but avoids
+    // an allocation on every single simulation step.
+    _windVect = new Vector3D(0.0, 0.0, 0.0);
+
     getWind() {
-        return new Vector3D(this.wind * Math.sin(this.degree * Math.PI / 180) * -1, 0, this.wind * Math.cos(this.degree * Math.PI / 180));
+        this._windVect.x = this.wind * Math.sin(this.degree * Math.PI / 180) * -1;
+        this._windVect.y = 0;
+        this._windVect.z = this.wind * Math.cos(this.degree * Math.PI / 180);
+
+        return this._windVect;
     }
 }
 
@@ -474,9 +499,26 @@ const _00E42544_vect_slope = new Vector3D(0.0, 0.0, 1.0);
 class QuadTree {
 
     constructor() {
-        this.ball = new Ball();
-        this.club = new Club();
-        this.wind = new Wind();
+        // ball/club/wind are always assigned a real reference by initShot()
+        // before anything on this QuadTree reads them, so the throwaway
+        // Ball()/Club()/Wind() instances (each of which itself allocates
+        // several Vector3D fields) created here were pure waste -- every
+        // find_power()/simulate_shot() call constructs a QuadTree and
+        // immediately overwrites all three. Left null until initShot() runs.
+        this.ball = null;
+        this.club = null;
+        this.wind = null;
+
+        // Scratch vectors for applyForce(), which runs once per physics
+        // step (the hottest loop in the whole solver). Each call fully
+        // overwrites every field it uses before reading it, and the
+        // returned vector is always consumed immediately by the caller
+        // (bounceProcess) and never retained across steps, so reusing the
+        // same instances call after call is numerically identical to
+        // allocating fresh ones every time.
+        this._scratchRet = new Vector3D(0.0, 0.0, 0.0);
+        this._scratchVectorB = new Vector3D(0.0, 0.0, 0.0);
+        this._scratchVel = new Vector3D(0.0, 0.0, 0.0);
     }
 
     gravityFactor = 1;
@@ -646,11 +688,13 @@ class QuadTree {
 
         let accellVect = this.applyForce();
 
-        let otherVect = accellVect.clone();
+        // accellVect is a brand-new Vector3D returned fresh from applyForce()
+        // every call (never a cached/shared instance), and nothing else reads
+        // it after this point, so mutating it in place instead of cloning it
+        // first saves an allocation without changing the result.
+        accellVect.divideScalar(this.ball.mass).multiplyScalar(steptime);
 
-        otherVect.divideScalar(this.ball.mass).multiplyScalar(steptime);
-
-        this.ball.velocity.add(otherVect);
+        this.ball.velocity.add(accellVect);
 
         if (this.ball.num_max_height == -1) {
 
@@ -669,11 +713,20 @@ class QuadTree {
 
     applyForce() {
 
-        let retVect = new Vector3D(0.0, 0.0, 0.0);
+        // Reused scratch vector instead of a fresh `new Vector3D(0,0,0)`
+        // every call -- explicitly zeroed here exactly like the literal it
+        // replaces, so its state never leaks between calls.
+        let retVect = this._scratchRet;
+        retVect.x = 0.0;
+        retVect.y = 0.0;
+        retVect.z = 0.0;
 
         if (this.ball.rotation_curve != 0) {
 
-            let vectorb = new Vector3D(this.ball.velocity.z * _00D046A8, 0, this.ball.velocity.x);
+            let vectorb = this._scratchVectorB;
+            vectorb.x = this.ball.velocity.z * _00D046A8;
+            vectorb.y = 0;
+            vectorb.z = this.ball.velocity.x;
 
             vectorb.normalize();
 
@@ -683,9 +736,14 @@ class QuadTree {
             retVect.add(vectorb);
         }
 
-        if (this.shot == SHOT_TYPE.SPIKE && this.spike_init < 0)
-            return new Vector3D(0.0, 0.0, 0.0);
-        else if (this.shot == SHOT_TYPE.COBRA && this.cobra_init < 0)
+        if (this.shot == SHOT_TYPE.SPIKE && this.spike_init < 0) {
+            // Matches the original `return new Vector3D(0.0, 0.0, 0.0);`:
+            // discard whatever was just accumulated above and hand back zero.
+            retVect.x = 0.0;
+            retVect.y = 0.0;
+            retVect.z = 0.0;
+            return retVect;
+        } else if (this.shot == SHOT_TYPE.COBRA && this.cobra_init < 0)
             return retVect;
 
         let windVect = this.wind.getWind();
@@ -699,7 +757,8 @@ class QuadTree {
         if (this.ball.rotation_spin != 0)
             retVect.y = retVect.y + (this.club.rotation_spin * _00D66CF8 * this.ball.rotation_spin);
 
-        let velVect = this.ball.velocity.clone();
+        let velVect = this._scratchVel;
+        velVect.copyFrom(this.ball.velocity);
 
         velVect.multiplyScalar(velVect.length() * _00D3D028);
 
@@ -773,8 +832,11 @@ class QuadTree {
 
 function simulate_shot(power_player, club_info, shot, power_shot, altura, vento, angulo, terreno, spin, curva, slope, percentShot) {
     const simulate = (distanceEstimate) => {
-        const altura_colision = altura * 1.094 * 3.2 + (new Ball()).diametro / 2;
+        // vball is created here (rather than after, as before) so its constant
+        // `diametro` field can be read directly below instead of allocating a
+        // second, throwaway Ball() purely to read the same constant off it.
         const vball = new Ball();
+        const altura_colision = altura * 1.094 * 3.2 + vball.diametro / 2;
         const vclub = club;
         const wind = new Wind();
         vclub.init(club_info);

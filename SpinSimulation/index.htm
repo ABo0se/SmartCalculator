@@ -77,11 +77,47 @@
 		}
 
 		#trajectory {
-			width: min(920px, 94vw);
-			height: 320px;
+			width: min(1200px, 96vw);
+			height: 420px;
 			display: block;
-			margin: 12px auto;
-			border: 1px solid pink;
+			margin: 0 auto;
+			border: 1px solid rgba(255, 192, 203, 0.65);
+			touch-action: none;
+		}
+
+		#trajectory-tools {
+			width: min(1200px, 96vw);
+			display: flex;
+			align-items: center;
+			justify-content: flex-end;
+			gap: 8px;
+			margin: 12px auto 4px;
+			color: pink;
+			font: 14px sans-serif;
+		}
+
+		#trajectory-tools button {
+			min-width: 36px;
+			padding: 5px 10px;
+			color: pink;
+			background: rgb(44, 0, 68);
+			border: 1px solid rgba(255, 192, 203, 0.65);
+			border-radius: 4px;
+			cursor: pointer;
+		}
+
+		#trajectory-tools button:hover {
+			background: rgb(82, 22, 105);
+		}
+
+		@media (max-width: 760px) {
+			#trajectory {
+				height: 640px;
+			}
+
+			#trajectory-tools {
+				flex-wrap: wrap;
+			}
 		}
 	</style>
 	<script>
@@ -255,7 +291,10 @@
 			<span style="margin-top: 5px;">
 				<font id="result"></font><br>
 			</span>
-			<canvas id="trajectory" width="920" height="320" aria-label="Simulated shot trajectory"></canvas>
+			<div id="trajectory-tools" aria-label="Chart zoom controls">
+				<button type="button" id="trajectory-zoom-reset">Reset zoom</button>
+			</div>
+			<canvas id="trajectory" width="1200" height="420" aria-label="Lateral path and height profile. Scroll to zoom at pointer position, drag to pan, drag axis labels to zoom."></canvas>
 			<center><div style="padding: 10px; font-size: 10px; color:pink"><b>Developed by Acrisio SuperSS Dev</b></div></center>
 		</div>
 	</div>

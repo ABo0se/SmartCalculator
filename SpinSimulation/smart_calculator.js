@@ -950,8 +950,7 @@ function simulate_shot(power_player, club_info, shot, power_shot, altura, vento,
         do {
             copy_ball.copy(vball);
             qt.ballProcess(_00D083A0);
-            if (count % 5 === 0)
-                trajectory.push({ x: vball.position.x, y: vball.position.y, z: vball.position.z });
+            trajectory.push({ x: vball.position.x, y: vball.position.y, z: vball.position.z });
         } while ((vball.position.y > altura_colision || vball.num_max_height == -1) && (count++) < limit_checking);
 
         // The interpolation below only makes sense if the loop actually bracketed a real
@@ -1116,8 +1115,7 @@ function simulate_shot(power_player, club_info, shot, power_shot, altura, vento,
                 }
 
                 bounceSteps++;
-                if (bounceSteps % 5 === 0)
-                    trajectory.push({ x: vball.position.x, y: vball.position.y, z: vball.position.z });
+                trajectory.push({ x: vball.position.x, y: vball.position.y, z: vball.position.z });
             }
         }
 
@@ -1147,9 +1145,7 @@ function simulate_shot(power_player, club_info, shot, power_shot, altura, vento,
                 advancePangyaMotion(_00D083A0, true);
                 vball.position.y = landingPoint.y;
                 steps++;
-
-                if (steps % 5 === 0)
-                    trajectory.push({ x: vball.position.x, y: landingPoint.y, z: vball.position.z });
+                trajectory.push({ x: vball.position.x, y: landingPoint.y, z: vball.position.z });
             }
 
             return steps;
@@ -1172,8 +1168,11 @@ function simulate_shot(power_player, club_info, shot, power_shot, altura, vento,
         if (afterBurnerTriggered)
             rollSteps += rollUntilStop();
 
-        if (rollSteps % 5 !== 0)
-            trajectory.push({ x: vball.position.x, y: landingPoint.y, z: vball.position.z });
+        const lastTrajectoryPoint = trajectory[trajectory.length - 1];
+        if (lastTrajectoryPoint.x !== vball.position.x ||
+            lastTrajectoryPoint.y !== vball.position.y ||
+            lastTrajectoryPoint.z !== vball.position.z)
+            trajectory.push({ x: vball.position.x, y: vball.position.y, z: vball.position.z });
 
         return {
             z: carryZ,
@@ -1448,7 +1447,13 @@ function calc(el) {
     );
 
     if (simulation.distance >= 0) {
-        drawTrajectory(simulation.trajectory, simulation.bouncePoints);
+        drawTrajectory(
+            simulation.trajectory,
+            simulation.bouncePoints,
+            height,
+            dis,
+            simulation.distance + simulation.totalRunDistance
+        );
         result.color = 'Green';
         const hwiFor = (desvioYards, distanceYards) =>
             desvioByDegree(desvioYards, distanceYards) / YARDS_TO_PB * dis;
@@ -1484,8 +1489,7 @@ function calc(el) {
         ).toFixed(4));
         const stageMetrics = [
             { name: 'Bounce', distance: simulation.bounceDistance, hwi: hwiBounce },
-            { name: 'Rollout', distance: simulation.rolloutDistance, hwi: hwiRollout },
-            { name: 'Run', distance: simulation.totalRunDistance, hwi: hwiRun }
+            { name: 'Rollout', distance: simulation.rolloutDistance, hwi: hwiRollout }
         ];
         if (simulation.afterBurnerTriggered)
             stageMetrics.push({
@@ -1493,6 +1497,12 @@ function calc(el) {
                 distance: simulation.afterBurnerDistance,
                 hwi: hwiAfterBurner
             });
+        stageMetrics.push({
+            name: 'Run',
+            distance: simulation.totalRunDistance,
+            hwi: hwiRun
+        });
+
         const nonZeroStages = stageMetrics.filter((stage) => Math.abs(stage.distance) >= 0.0005);
         const stageDistanceLines = nonZeroStages.map((stage) => `
         <text style="color:Pink"><text style="font-size:16px">
@@ -1522,28 +1532,24 @@ function calc(el) {
             previousBounceZ = pointZ;
             return { number: index + 1, distance: distance, hwi: hwi };
         }).filter((bounce) => Math.abs(bounce.distance) >= 0.0005);
-        const displayedBounces = bounceDetails.slice(0, 10);
-        const bounceDistanceLines = displayedBounces
+        const bounceDistanceLines = bounceDetails
             .map((bounce) => `
         <text style="color:Pink"><text style="font-size:16px">
             Bounce ${bounce.number} Distance : ${bounce.distance.toFixed(3)}y
         </text><br>`)
             .join('');
-        const bounceHwiLines = displayedBounces
+        const bounceHwiLines = bounceDetails
             .map((bounce) => `
         <text style="color:Pink"><text style="font-size:16px">
             HWI (Bounce ${bounce.number}) : ${bounce.hwi.toFixed(4)} pb
         </text><br>`)
             .join('');
-        const bounceAimLines = displayedBounces
+        const bounceAimLines = bounceDetails
             .map((bounce) => `
         <text style="color:Pink"><text style="font-size:16px">
             AIM (Bounce ${bounce.number}) : ${aimFor(bounce.hwi)} aim
         </text><br>`)
             .join('');
-        const remainingBounceNote = bounceDetails.length > displayedBounces.length
-            ? `<text style="color:Pink"><text style="font-size:16px">Showing first 10 of ${bounceDetails.length} non-zero bounces.</text><br>`
-            : '';
         result.innerHTML = `
         <b><text style="color:Pink"><text style="font-size:18px">General Data</text></b><br>
         <text style="color:Pink"><text style="font-size:16px">
@@ -1561,7 +1567,6 @@ function calc(el) {
             Bounces : ${simulation.bounceCount}
         </text><br>
         ${bounceDistanceLines}
-        ${remainingBounceNote}
         <br>
 
         <b><text style="color:Pink"><text style="font-size:18px">HWI</text></b><br>
@@ -1607,102 +1612,477 @@ function calc(el) {
     }
 }
 
-function drawTrajectory(trajectory, bouncePoints) {
+const trajectoryZoom = {
+    lateral: { x: 1, y: 1 },
+    height: { x: 1, y: 1 }
+};
+const trajectoryPan = {
+    lateral: { x: 0, y: 0 },
+    height: { x: 0, y: 0 }
+};
+let trajectoryPlotRanges = {};
+let activeTrajectoryPan = null;
+let activeTrajectoryZoom = null;
+let lastTrajectory = [];
+let lastBouncePoints = [];
+let lastTerrainHeightMeters = 0;
+let lastCarryRunDistanceYards = 0;
+let lastLateralScaleToPb = 1;
+
+function drawTrajectory(trajectory, bouncePoints, terrainHeightMeters = 0, displayScale = 1, carryRunDistanceYards = 0) {
+    lastTrajectory = trajectory;
+    lastBouncePoints = bouncePoints;
+    lastTerrainHeightMeters = terrainHeightMeters;
+    lastCarryRunDistanceYards = carryRunDistanceYards;
+    lastLateralScaleToPb = displayScale / YARDS_TO_PB;
+    trajectoryPan.lateral.x = 0;
+    trajectoryPan.lateral.y = 0;
+    trajectoryPan.height.x = 0;
+    trajectoryPan.height.y = 0;
+    renderTrajectory();
+}
+
+function renderTrajectory() {
     const canvas = document.getElementById('trajectory');
     const context = canvas.getContext('2d');
     const pixelRatio = window.devicePixelRatio || 1;
     const width = canvas.clientWidth;
     const height = canvas.clientHeight;
 
+    if (width === 0 || height === 0)
+        return;
+
     canvas.width = width * pixelRatio;
     canvas.height = height * pixelRatio;
     context.scale(pixelRatio, pixelRatio);
     context.fillStyle = 'rgb(44, 0, 68)';
     context.fillRect(0, 0, width, height);
-    context.font = '14px sans-serif';
+    context.font = '12px sans-serif';
     context.fillStyle = 'pink';
 
-    if (trajectory.length < 2) {
+    if (lastTrajectory.length < 2) {
         context.fillText('Calculate a shot to view its simulated path.', 16, 26);
         return;
     }
 
-    const splitX = width / 2;
-    const chartTop = 42;
-    const chartBottom = height - 32;
-    const chartHeight = chartBottom - chartTop;
-    const chartWidth = splitX - 56;
-    const maxForward = Math.max(...trajectory.map(point => point.z / 3.2));
-    const maxLateral = Math.max(...trajectory.map(point => Math.abs(point.x * DESVIO_SCALE_PANGYA_TO_YARD)), 1);
-    const maxAltitude = Math.max(...trajectory.map(point => point.y / 3.2), 1);
+    const narrowLayout = width < 760;
+    const panelGap = 24;
+    const panelWidth = narrowLayout ? width : (width - panelGap) / 2;
+    const panelHeight = narrowLayout ? (height - panelGap) / 2 : height;
+    const panels = narrowLayout
+        ? [
+            { x: 0, y: 0, width: panelWidth, height: panelHeight },
+            { x: 0, y: panelHeight + panelGap, width: panelWidth, height: panelHeight }
+        ]
+        : [
+            { x: 0, y: 0, width: panelWidth, height: height },
+            { x: panelWidth + panelGap, y: 0, width: panelWidth, height: height }
+        ];
 
-    context.fillText(`Top view: lateral path (±${maxLateral.toFixed(2)}y)`, 16, 24);
-    context.fillText(`Side view: height profile (${maxAltitude.toFixed(1)}y max)`, splitX + 16, 24);
+    const heightUnitToMeters = 1 / (3.2 * 1.094);
+    const golfRadiusInternal = new Ball().diametro / 2;
+    const golfRadiusMeters = golfRadiusInternal * heightUnitToMeters;
+    const values = {
+        lateral: lastTrajectory.map(point =>
+            point.x * DESVIO_SCALE_PANGYA_TO_YARD * lastLateralScaleToPb
+        ),
+        distance: lastTrajectory.map(point => point.z / 3.2),
+        height: lastTrajectory.map((point, index) =>
+            (index === 0 ? golfRadiusInternal : point.y) * heightUnitToMeters
+        )
+    };
+    const bounds = (items, zoom, symmetric = false) => {
+        let min = Math.min(0, ...items);
+        let max = Math.max(0, ...items);
+        const extent = Math.max(max - min, 1);
+        if (symmetric) {
+            const halfRange = Math.max(Math.abs(min), Math.abs(max), 0.5) * 1.08 / zoom;
+            return { min: -halfRange, max: halfRange };
+        }
 
-    const drawPath = (points, color) => {
+        const padding = extent * 0.08;
+        min -= padding;
+        max += padding;
+        const center = (min + max) / 2;
+        const halfRange = (max - min) / (2 * zoom);
+        min = center - halfRange;
+        max = center + halfRange;
+        return { min, max };
+    };
+    const niceStep = (range, targetTicks) => {
+        const rough = (range.max - range.min) / targetTicks;
+        const power = Math.pow(10, Math.floor(Math.log10(rough)));
+        const fraction = rough / power;
+        const niceFraction = fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 5 ? 5 : 10;
+        return niceFraction * power;
+    };
+    const tickValues = (range) => {
+        const step = niceStep(range, 5);
+        const ticks = [];
+        for (let value = Math.ceil(range.min / step) * step;
+            value <= range.max + step * 1e-8;
+            value += step) {
+            ticks.push(Math.abs(value) < step * 1e-8 ? 0 : value);
+        }
+        return { ticks, step };
+    };
+    const formatTick = (value, step) => {
+        const decimals = Math.max(0, Math.min(3, -Math.floor(Math.log10(step))));
+        return value.toFixed(decimals);
+    };
+    trajectoryPlotRanges = {};
+    const drawPanel = (panel, panelId, title, xLabel, yLabel, xValues, yValues, xSymmetric, pathColor, pathPoints, markerPoints, startLabel = '', referenceLineValue = null) => {
+        const left = panel.x + 48;
+        const right = panel.x + panel.width - 14;
+        const top = panel.y + 38;
+        const bottom = panel.y + panel.height - 38;
+        const plotWidth = right - left;
+        const plotHeight = bottom - top;
+        const xRange = bounds(xValues, trajectoryZoom[panelId].x, xSymmetric);
+        const plotYValues = panelId === 'height'
+            ? [...yValues, lastTerrainHeightMeters]
+            : panelId === 'lateral'
+                ? [...yValues, lastCarryRunDistanceYards]
+                : yValues;
+        const yRange = bounds(plotYValues, trajectoryZoom[panelId].y);
+        xRange.min += trajectoryPan[panelId].x;
+        xRange.max += trajectoryPan[panelId].x;
+        yRange.min += trajectoryPan[panelId].y;
+        yRange.max += trajectoryPan[panelId].y;
+        trajectoryPlotRanges[panelId] = {
+            left,
+            right,
+            top,
+            bottom,
+            xAxisBand: {
+                left,
+                right,
+                top: bottom - 2,
+                bottom: panel.y + panel.height
+            },
+            yAxisBand: {
+                left: panel.x + 22,
+                right: left + 2,
+                top,
+                bottom
+            },
+            xSpan: xRange.max - xRange.min,
+            ySpan: yRange.max - yRange.min,
+            xMin: xRange.min,
+            xMax: xRange.max,
+            yMin: yRange.min,
+            yMax: yRange.max
+        };
+        const xTicks = tickValues(xRange);
+        const yTicks = tickValues(yRange);
+        const xToCanvas = (value) => left + (value - xRange.min) / (xRange.max - xRange.min) * plotWidth;
+        const yToCanvas = (value) => bottom - (value - yRange.min) / (yRange.max - yRange.min) * plotHeight;
+
+        context.fillStyle = 'pink';
+        context.font = 'bold 13px sans-serif';
+        context.fillText(title, panel.x + 8, panel.y + 20);
+        context.font = '10px sans-serif';
+
+        context.save();
         context.beginPath();
-        points.forEach((point, index) => {
+        context.rect(left, top, plotWidth, plotHeight);
+        context.clip();
+        for (const tick of xTicks.ticks) {
+            const x = xToCanvas(tick);
+            context.beginPath();
+            context.strokeStyle = tick === 0 ? 'rgba(255, 192, 203, 0.6)' : 'rgba(255, 192, 203, 0.18)';
+            context.lineWidth = tick === 0 ? 1.5 : 1;
+            context.moveTo(x, top);
+            context.lineTo(x, bottom);
+            context.stroke();
+        }
+        for (const tick of yTicks.ticks) {
+            const y = yToCanvas(tick);
+            context.beginPath();
+            context.strokeStyle = tick === 0 ? 'rgba(255, 192, 203, 0.6)' : 'rgba(255, 192, 203, 0.18)';
+            context.lineWidth = tick === 0 ? 1.5 : 1;
+            context.moveTo(left, y);
+            context.lineTo(right, y);
+            context.stroke();
+        }
+        if (referenceLineValue !== null) {
+            const terrainY = yToCanvas(referenceLineValue);
+            context.beginPath();
+            context.setLineDash([6, 4]);
+            context.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+            context.lineWidth = 1.5;
+            context.moveTo(left, terrainY);
+            context.lineTo(right, terrainY);
+            context.stroke();
+            context.setLineDash([]);
+        }
+
+        context.beginPath();
+        pathPoints.forEach((point, index) => {
+            const x = xToCanvas(point.x);
+            const y = yToCanvas(point.y);
             if (index === 0)
-                context.moveTo(point.x, point.y);
+                context.moveTo(x, y);
             else
-                context.lineTo(point.x, point.y);
+                context.lineTo(x, y);
         });
-        context.strokeStyle = color;
+        context.strokeStyle = pathColor;
         context.lineWidth = 2;
         context.stroke();
-    };
 
-    const topView = trajectory.map(point => ({
-        x: 28 + ((point.x * DESVIO_SCALE_PANGYA_TO_YARD + maxLateral) / (maxLateral * 2)) * chartWidth,
-        y: chartBottom - (point.z / 3.2 / maxForward) * chartHeight
-    }));
-    drawPath(topView, 'cyan');
-
-    const profile = trajectory.map(point => ({
-        x: splitX + 28 + (point.z / 3.2 / maxForward) * chartWidth,
-        y: chartBottom - (point.y / 3.2 / maxAltitude) * chartHeight
-    }));
-    drawPath(profile, 'orange');
-
-    const drawBounceMarkers = (points, color) => {
-        context.fillStyle = color;
-        points.forEach(point => {
+        for (const point of [pathPoints[0], pathPoints[pathPoints.length - 1]]) {
             context.beginPath();
-            context.arc(point.x, point.y, 4, 0, Math.PI * 2);
+            context.arc(xToCanvas(point.x), yToCanvas(point.y), 4, 0, Math.PI * 2);
+            context.fillStyle = point === pathPoints[0] ? 'lime' : 'red';
             context.fill();
-        });
+        }
+        if (startLabel) {
+            context.fillStyle = 'lime';
+            context.textAlign = 'left';
+            context.fillText(
+                startLabel,
+                xToCanvas(pathPoints[0].x) + 7,
+                yToCanvas(pathPoints[0].y) - 7
+            );
+            context.textAlign = 'start';
+        }
+
+        for (const point of markerPoints) {
+            const x = xToCanvas(point.x);
+            const y = yToCanvas(point.y);
+            context.beginPath();
+            context.arc(x, y, 3.5, 0, Math.PI * 2);
+            context.fillStyle = 'yellow';
+            context.fill();
+        }
+        context.restore();
+
+        context.strokeStyle = 'rgba(255, 192, 203, 0.55)';
+        context.lineWidth = 1;
+        context.strokeRect(left, top, plotWidth, plotHeight);
+        context.fillStyle = 'pink';
+        context.font = '10px sans-serif';
+        context.textAlign = 'center';
+        for (const tick of xTicks.ticks)
+            context.fillText(formatTick(tick, xTicks.step), xToCanvas(tick), bottom + 13);
+        context.textAlign = 'right';
+        for (const tick of yTicks.ticks)
+            context.fillText(formatTick(tick, yTicks.step), left - 5, yToCanvas(tick) + 3);
+        context.textAlign = 'center';
+        context.fillText(xLabel, left + plotWidth / 2, panel.y + panel.height - 5);
+        context.save();
+        context.translate(panel.x + 10, top + plotHeight / 2);
+        context.rotate(-Math.PI / 2);
+        context.fillText(yLabel, 0, 0);
+        context.restore();
+        context.textAlign = 'start';
     };
-    drawBounceMarkers(bouncePoints.map(point => ({
-        x: 28 + ((point.x * DESVIO_SCALE_PANGYA_TO_YARD + maxLateral) / (maxLateral * 2)) * chartWidth,
-        y: chartBottom - (point.z / 3.2 / maxForward) * chartHeight
-    })), 'yellow');
-    drawBounceMarkers(bouncePoints.map(point => ({
-        x: splitX + 28 + (point.z / 3.2 / maxForward) * chartWidth,
-        y: chartBottom - (point.y / 3.2 / maxAltitude) * chartHeight
-    })), 'yellow');
 
-    context.fillStyle = 'lime';
-    context.beginPath();
-    context.arc(topView[0].x, topView[0].y, 4, 0, Math.PI * 2);
-    context.fill();
-    context.fillStyle = 'red';
-    context.beginPath();
-    context.arc(topView[topView.length - 1].x, topView[topView.length - 1].y, 4, 0, Math.PI * 2);
-    context.fill();
-
-    context.strokeStyle = 'rgba(255, 192, 203, 0.35)';
-    context.lineWidth = 1;
-    context.beginPath();
-    context.moveTo(28, chartBottom);
-    context.lineTo(splitX - 28, chartBottom);
-    context.moveTo(splitX + 28, chartBottom);
-    context.lineTo(width - 28, chartBottom);
-    context.stroke();
-    context.fillStyle = 'pink';
-    context.font = '11px sans-serif';
-    context.fillText(`${maxForward.toFixed(0)}y`, splitX - 50, height - 8);
-    context.fillText(`${maxForward.toFixed(0)}y`, width - 58, height - 8);
+    const lateralMarkers = lastBouncePoints.map(point => ({
+        x: point.x * DESVIO_SCALE_PANGYA_TO_YARD * lastLateralScaleToPb,
+        y: point.z / 3.2
+    }));
+    const heightMarkers = lastBouncePoints.map(point => ({
+        x: point.z / 3.2,
+        y: point.y * heightUnitToMeters
+    }));
+    drawPanel(
+        panels[0],
+        'lateral',
+        'Lateral path',
+        'Lateral position (pb)',
+        'Distance (y)',
+        values.lateral,
+        values.distance,
+        true,
+        'cyan',
+        lastTrajectory.map(point => ({
+            x: point.x * DESVIO_SCALE_PANGYA_TO_YARD * lastLateralScaleToPb,
+            y: point.z / 3.2
+        })),
+        lateralMarkers,
+        '',
+        lastCarryRunDistanceYards
+    );
+    drawPanel(
+        panels[1],
+        'height',
+        'Height profile',
+        'Distance (y)',
+        'Height (m)',
+        values.distance,
+        values.height,
+        false,
+        'orange',
+        lastTrajectory.map(point => ({
+            x: point.z / 3.2,
+            y: point.y * heightUnitToMeters
+        })).map((point, index) => index === 0
+            ? { x: point.x, y: golfRadiusMeters }
+            : point),
+        heightMarkers,
+        `Start +${golfRadiusMeters.toFixed(3)} m`,
+        lastTerrainHeightMeters
+    );
 }
+
+function stopTrajectoryInteraction(event) {
+    activeTrajectoryPan = null;
+    activeTrajectoryZoom = null;
+    if (event && trajectoryCanvas.hasPointerCapture(event.pointerId))
+        trajectoryCanvas.releasePointerCapture(event.pointerId);
+    trajectoryCanvas.style.cursor = 'grab';
+}
+
+document.getElementById('trajectory-zoom-reset').addEventListener('click', () => {
+    for (const panelId of ['lateral', 'height']) {
+        trajectoryZoom[panelId].x = 1;
+        trajectoryZoom[panelId].y = 1;
+        trajectoryPan[panelId].x = 0;
+        trajectoryPan[panelId].y = 0;
+    }
+    renderTrajectory();
+});
+const trajectoryCanvas = document.getElementById('trajectory');
+trajectoryCanvas.addEventListener('wheel', (event) => {
+    const rect = trajectoryCanvas.getBoundingClientRect();
+    const scaleX = trajectoryCanvas.clientWidth / rect.width;
+    const scaleY = trajectoryCanvas.clientHeight / rect.height;
+    const x = (event.clientX - rect.left) * scaleX;
+    const y = (event.clientY - rect.top) * scaleY;
+    const panelEntry = Object.entries(trajectoryPlotRanges).find(([, plot]) =>
+        x >= plot.left && x <= plot.right && y >= plot.top && y <= plot.bottom
+    );
+    if (!panelEntry)
+        return;
+
+    event.preventDefault();
+    const [panelId, plot] = panelEntry;
+    const zoom = trajectoryZoom[panelId];
+    const factor = event.deltaY < 0 ? 1.15 : 1 / 1.15;
+    const pointerX = (x - plot.left) / (plot.right - plot.left);
+    const pointerY = (y - plot.top) / (plot.bottom - plot.top);
+
+    for (const [axis, pointer, minimum, maximum, panDirection] of [
+        ['x', pointerX, plot.xMin, plot.xMax, 'x'],
+        ['y', pointerY, plot.yMin, plot.yMax, 'y']
+    ]) {
+        const oldZoom = zoom[axis];
+        const nextZoom = Math.min(64, Math.max(0.25, oldZoom * factor));
+        const actualFactor = nextZoom / oldZoom;
+        if (actualFactor === 1)
+            continue;
+
+        const rangeCenter = (minimum + maximum) / 2;
+        const anchor = axis === 'x'
+            ? minimum + pointer * (maximum - minimum)
+            : maximum - pointer * (maximum - minimum);
+        const targetCenter = anchor + (rangeCenter - anchor) / actualFactor;
+        const baseCenter = rangeCenter - trajectoryPan[panelId][panDirection];
+        zoom[axis] = nextZoom;
+        trajectoryPan[panelId][panDirection] = targetCenter - baseCenter;
+    }
+
+    renderTrajectory();
+}, { passive: false });
+trajectoryCanvas.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0)
+        return;
+
+    const rect = trajectoryCanvas.getBoundingClientRect();
+    const x = (event.clientX - rect.left) * trajectoryCanvas.clientWidth / rect.width;
+    const y = (event.clientY - rect.top) * trajectoryCanvas.clientHeight / rect.height;
+    const axisHit = Object.entries(trajectoryPlotRanges).find(([, plot]) =>
+        (x >= plot.yAxisBand.left && x <= plot.yAxisBand.right &&
+            y >= plot.yAxisBand.top && y <= plot.yAxisBand.bottom) ||
+        (x >= plot.xAxisBand.left && x <= plot.xAxisBand.right &&
+            y >= plot.xAxisBand.top && y <= plot.xAxisBand.bottom)
+    );
+    if (axisHit) {
+        const [panelId, plot] = axisHit;
+        const axis = x >= plot.yAxisBand.left && x <= plot.yAxisBand.right ? 'y' : 'x';
+        activeTrajectoryZoom = {
+            panelId,
+            axis,
+            x: event.clientX,
+            y: event.clientY
+        };
+        trajectoryCanvas.setPointerCapture(event.pointerId);
+        trajectoryCanvas.style.cursor = axis === 'x' ? 'ew-resize' : 'ns-resize';
+        return;
+    }
+
+    const panelHit = Object.entries(trajectoryPlotRanges).find(([, plot]) =>
+        x >= plot.left && x <= plot.right && y >= plot.top && y <= plot.bottom
+    );
+    if (!panelHit)
+        return;
+
+    const [panelId] = panelHit;
+    activeTrajectoryPan = { panelId, x: event.clientX, y: event.clientY };
+    trajectoryCanvas.setPointerCapture(event.pointerId);
+    trajectoryCanvas.style.cursor = 'grabbing';
+});
+trajectoryCanvas.addEventListener('pointermove', (event) => {
+    const rect = trajectoryCanvas.getBoundingClientRect();
+    const scaleX = trajectoryCanvas.clientWidth / rect.width;
+    const scaleY = trajectoryCanvas.clientHeight / rect.height;
+
+    if (!activeTrajectoryZoom && !activeTrajectoryPan) {
+        const x = (event.clientX - rect.left) * scaleX;
+        const y = (event.clientY - rect.top) * scaleY;
+        const axisHit = Object.values(trajectoryPlotRanges).find((plot) =>
+            (x >= plot.yAxisBand.left && x <= plot.yAxisBand.right &&
+                y >= plot.yAxisBand.top && y <= plot.yAxisBand.bottom) ||
+            (x >= plot.xAxisBand.left && x <= plot.xAxisBand.right &&
+                y >= plot.xAxisBand.top && y <= plot.xAxisBand.bottom)
+        );
+        if (axisHit) {
+            const verticalAxis = x >= axisHit.yAxisBand.left && x <= axisHit.yAxisBand.right;
+            trajectoryCanvas.style.cursor = verticalAxis ? 'ns-resize' : 'ew-resize';
+        } else {
+            trajectoryCanvas.style.cursor = 'grab';
+        }
+        return;
+    }
+
+    if (activeTrajectoryZoom) {
+        const delta = activeTrajectoryZoom.axis === 'x'
+            ? (event.clientX - activeTrajectoryZoom.x) * scaleX
+            : (activeTrajectoryZoom.y - event.clientY) * scaleY;
+        if (delta !== 0) {
+            const zoom = trajectoryZoom[activeTrajectoryZoom.panelId];
+            const nextZoom = Math.min(64, Math.max(0.25,
+                zoom[activeTrajectoryZoom.axis] * Math.exp(delta / 120)));
+            zoom[activeTrajectoryZoom.axis] = nextZoom;
+            activeTrajectoryZoom.x = event.clientX;
+            activeTrajectoryZoom.y = event.clientY;
+            renderTrajectory();
+        }
+        return;
+    }
+
+    if (!activeTrajectoryPan)
+        return;
+
+    const plot = trajectoryPlotRanges[activeTrajectoryPan.panelId];
+    if (!plot)
+        return;
+
+    const deltaX = (event.clientX - activeTrajectoryPan.x) * scaleX;
+    const deltaY = (event.clientY - activeTrajectoryPan.y) * scaleY;
+    const pan = trajectoryPan[activeTrajectoryPan.panelId];
+    pan.x -= deltaX / (plot.right - plot.left) * plot.xSpan;
+    pan.y += deltaY / (plot.bottom - plot.top) * plot.ySpan;
+    activeTrajectoryPan.x = event.clientX;
+    activeTrajectoryPan.y = event.clientY;
+    renderTrajectory();
+});
+trajectoryCanvas.addEventListener('pointerup', stopTrajectoryInteraction);
+trajectoryCanvas.addEventListener('pointercancel', stopTrajectoryInteraction);
+trajectoryCanvas.addEventListener('lostpointercapture', () => stopTrajectoryInteraction());
+trajectoryCanvas.style.cursor = 'grab';
+window.addEventListener('resize', renderTrajectory);
 
 function calcMycella(el) {
 

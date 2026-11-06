@@ -888,7 +888,7 @@ class QuadTree {
     }
 }
 
-function simulate_shot(power_player, club_info, shot, power_shot, altura, vento, angulo, terreno, spin, curva, slope, percentShot, bound, roll) {
+function simulate_shot(power_player, club_info, shot, power_shot, altura, vento, angulo, terreno, spin, curva, slope, percentShot, bound, roll, afterBurnerEnabled = true) {
 
     const simulate = (distanceEstimate) => {
         const altura_colision_raw = altura * 1.094 * 3.2;
@@ -939,6 +939,7 @@ function simulate_shot(power_player, club_info, shot, power_shot, altura, vento,
 
         const qt = new QuadTree();
         qt.initShot(vball, vclub, wind, options);
+        const afterBurnerLaunchVelocity = vball.velocity.clone();
 
         let count = 0;
         let copy_ball = new Ball();
@@ -993,6 +994,15 @@ function simulate_shot(power_player, club_info, shot, power_shot, altura, vento,
         const carryX = vball.position.x;
         const impactVelocity = vball.velocity.clone();
         const initialSpin = vball.spin;
+        const initialShotPower = qt.power_factor;
+        const backspinAfterBounce = afterBurnerEnabled && initialSpin > 0;
+        const frontspinAfterRoll = afterBurnerEnabled && initialSpin < 0;
+        const usesCarryAfterBurner = afterBurnerEnabled &&
+            (shot == SHOT_TYPE.TOMAHAWK || shot == SHOT_TYPE.SPIKE);
+        let afterBurnerPending = usesCarryAfterBurner;
+        let afterBurnerTriggered = false;
+        let afterBurnerStartX = carryX;
+        let afterBurnerStartZ = carryZ;
         let bounceCount = 0;
 
         const applyFlatGroundBounceResponse = (incomingVelocity) => {
@@ -1037,54 +1047,78 @@ function simulate_shot(power_player, club_info, shot, power_shot, altura, vento,
             }
         };
 
-        // The flat-ground equivalent of BounceResponse followed by BounceProcess.
+        const triggerAfterBurner = () => {
+            afterBurnerStartX = vball.position.x;
+            afterBurnerStartZ = vball.position.z;
+            const inversePower = initialShotPower !== 0 ? 1 / initialShotPower : 0;
+            const scale = initialSpin * -40;
+            vball.velocity.x = afterBurnerLaunchVelocity.x * scale * inversePower;
+            vball.velocity.y = 0;
+            vball.velocity.z = afterBurnerLaunchVelocity.z * scale * inversePower;
+            vball.spin = initialSpin * 1.5;
+
+            for (let frame = 0; frame < 50; frame++)
+                vball.ball_30 += initialSpin * 62.831856 * _00D083A0;
+
+            afterBurnerTriggered = true;
+        };
+
+        // Tomahawk and Spike suppress the flat-ground bounce and trigger at carry end.
         qt.cobra_init = 0;
         qt.spike_init = 0;
         vball.position.y = landingPoint.y;
-        vball.velocity = impactVelocity.clone();
         vball.curva = 0;
         vball.rotation_curve = 0;
-        applyFlatGroundBounceResponse(impactVelocity);
 
         let bounceSteps = 0;
         let transitionedToRoll = false;
         let groundContact = true;
         let previousBounceZ = carryZ;
         const bounceDistances = [];
-        while (bounceSteps < 10000) {
-            advancePangyaMotion(_00D083A0, false);
-            if (groundContact && vball.velocity.y < 0) {
-                vball.velocity.y = 0;
-                vball.position.y = landingPoint.y;
-                transitionedToRoll = true;
-                break;
-            }
+        if (usesCarryAfterBurner) {
+            vball.velocity = new Vector3D(0, 0, 0);
+            triggerAfterBurner();
+            transitionedToRoll = true;
+        } else {
+            vball.velocity = impactVelocity.clone();
+            applyFlatGroundBounceResponse(impactVelocity);
 
-            const move = vball.velocity.clone().multiplyScalar(_00D083A0);
-            if (move.y < 0 && vball.position.y + move.y <= landingPoint.y) {
-                const impactFraction = Math.min(1, Math.max(0,
-                    (landingPoint.y - vball.position.y) / move.y));
-                vball.position.x += move.x * impactFraction;
-                vball.position.z += move.z * impactFraction;
-                vball.position.y = landingPoint.y;
-                bouncePoints.push({
-                    x: vball.position.x,
-                    y: vball.position.y,
-                    z: vball.position.z
-                });
-                bounceDistances.push((vball.position.z - previousBounceZ) / 3.2);
-                previousBounceZ = vball.position.z;
-                bounceCount++;
-                applyFlatGroundBounceResponse(vball.velocity.clone());
-                groundContact = true;
-            } else {
-                vball.position.add(move);
-                groundContact = false;
-            }
+            while (bounceSteps < 10000) {
+                advancePangyaMotion(_00D083A0, false);
+                if (groundContact && vball.velocity.y < 0) {
+                    vball.velocity.y = 0;
+                    vball.position.y = landingPoint.y;
+                    transitionedToRoll = true;
+                    afterBurnerPending = backspinAfterBounce;
+                    break;
+                }
 
-            bounceSteps++;
-            if (bounceSteps % 5 === 0)
-                trajectory.push({ x: vball.position.x, y: vball.position.y, z: vball.position.z });
+                const move = vball.velocity.clone().multiplyScalar(_00D083A0);
+                if (move.y < 0 && vball.position.y + move.y <= landingPoint.y) {
+                    const impactFraction = Math.min(1, Math.max(0,
+                        (landingPoint.y - vball.position.y) / move.y));
+                    vball.position.x += move.x * impactFraction;
+                    vball.position.z += move.z * impactFraction;
+                    vball.position.y = landingPoint.y;
+                    bouncePoints.push({
+                        x: vball.position.x,
+                        y: vball.position.y,
+                        z: vball.position.z
+                    });
+                    bounceDistances.push((vball.position.z - previousBounceZ) / 3.2);
+                    previousBounceZ = vball.position.z;
+                    bounceCount++;
+                    applyFlatGroundBounceResponse(vball.velocity.clone());
+                    groundContact = true;
+                } else {
+                    vball.position.add(move);
+                    groundContact = false;
+                }
+
+                bounceSteps++;
+                if (bounceSteps % 5 === 0)
+                    trajectory.push({ x: vball.position.x, y: vball.position.y, z: vball.position.z });
+            }
         }
 
         if (!transitionedToRoll) {
@@ -1097,24 +1131,46 @@ function simulate_shot(power_player, club_info, shot, power_shot, altura, vento,
         const bounceEndX = vball.position.x;
         const bounceEndZ = vball.position.z;
         const bounceDistance = (bounceEndZ - carryZ) / 3.2;
+        let rolloutEndX = bounceEndX;
+        let rolloutEndZ = bounceEndZ;
         const rollStopSpeed = QUADTREE_GRAVITY * roll * _00D083A0;
-        let rollSteps = 0;
+        const rollUntilStop = () => {
+            let steps = 0;
+            while (steps < 10000) {
+                const groundSpeed = Math.hypot(vball.velocity.x, vball.velocity.z);
+                if (groundSpeed < rollStopSpeed) {
+                    vball.velocity.x = 0;
+                    vball.velocity.y = 0;
+                    vball.velocity.z = 0;
+                    break;
+                }
+                advancePangyaMotion(_00D083A0, true);
+                vball.position.y = landingPoint.y;
+                steps++;
 
-        while (rollSteps < 10000) {
-            const groundSpeed = Math.hypot(vball.velocity.x, vball.velocity.z);
-            if (groundSpeed < rollStopSpeed) {
-                vball.velocity.x = 0;
-                vball.velocity.y = 0;
-                vball.velocity.z = 0;
-                break;
+                if (steps % 5 === 0)
+                    trajectory.push({ x: vball.position.x, y: landingPoint.y, z: vball.position.z });
             }
-            advancePangyaMotion(_00D083A0, true);
-            vball.position.y = landingPoint.y;
-            rollSteps++;
 
-            if (rollSteps % 5 === 0)
-                trajectory.push({ x: vball.position.x, y: landingPoint.y, z: vball.position.z });
+            return steps;
+        };
+
+        let rollSteps = 0;
+        if (!afterBurnerTriggered && afterBurnerPending) {
+            triggerAfterBurner();
+        } else {
+            rollSteps += rollUntilStop();
+            rolloutEndX = vball.position.x;
+            rolloutEndZ = vball.position.z;
+            if (!afterBurnerTriggered && frontspinAfterRoll &&
+                afterBurnerEnabled &&
+                (shot == SHOT_TYPE.DUNK || shot == SHOT_TYPE.COBRA)) {
+                triggerAfterBurner();
+            }
         }
+
+        if (afterBurnerTriggered)
+            rollSteps += rollUntilStop();
 
         if (rollSteps % 5 !== 0)
             trajectory.push({ x: vball.position.x, y: landingPoint.y, z: vball.position.z });
@@ -1124,6 +1180,11 @@ function simulate_shot(power_player, club_info, shot, power_shot, altura, vento,
             x: carryX,
             bounceEndX: bounceEndX,
             bounceEndZ: bounceEndZ,
+            rolloutEndX: rolloutEndX,
+            rolloutEndZ: rolloutEndZ,
+            afterBurnerTriggered: afterBurnerTriggered,
+            afterBurnerStartX: afterBurnerStartX,
+            afterBurnerStartZ: afterBurnerStartZ,
             finalX: vball.position.x,
             finalZ: vball.position.z,
             trajectory: trajectory,
@@ -1131,7 +1192,10 @@ function simulate_shot(power_player, club_info, shot, power_shot, altura, vento,
             bounceCount: bounceCount,
             bounceDistances: bounceDistances,
             bounceDistance: bounceDistance,
-            rolloutDistance: (vball.position.z - bounceEndZ) / 3.2,
+            rolloutDistance: (rolloutEndZ - bounceEndZ) / 3.2,
+            afterBurnerDistance: afterBurnerTriggered
+                ? (vball.position.z - afterBurnerStartZ) / 3.2
+                : 0,
             totalRunDistance: (vball.position.z - carryZ) / 3.2
         };
     };
@@ -1152,6 +1216,11 @@ function simulate_shot(power_player, club_info, shot, power_shot, altura, vento,
             pb: desvioByDegree(desvioYards, distanceYards) / YARDS_TO_PB,
             bounceEndX: resultA.bounceEndX,
             bounceEndZ: resultA.bounceEndZ,
+            rolloutEndX: resultA.rolloutEndX,
+            rolloutEndZ: resultA.rolloutEndZ,
+            afterBurnerTriggered: resultA.afterBurnerTriggered,
+            afterBurnerStartX: resultA.afterBurnerStartX,
+            afterBurnerStartZ: resultA.afterBurnerStartZ,
             finalX: resultA.finalX,
             finalZ: resultA.finalZ,
             trajectory: resultA.trajectory,
@@ -1160,6 +1229,7 @@ function simulate_shot(power_player, club_info, shot, power_shot, altura, vento,
             bounceDistances: resultA.bounceDistances,
             bounceDistance: resultA.bounceDistance,
             rolloutDistance: resultA.rolloutDistance,
+            afterBurnerDistance: resultA.afterBurnerDistance,
             totalRunDistance: resultA.totalRunDistance
         };
     }
@@ -1172,6 +1242,11 @@ function simulate_shot(power_player, club_info, shot, power_shot, altura, vento,
             pb: (resultA.x * DESVIO_SCALE_PANGYA_TO_YARD) / YARDS_TO_PB,
             bounceEndX: resultA.bounceEndX,
             bounceEndZ: resultA.bounceEndZ,
+            rolloutEndX: resultA.rolloutEndX,
+            rolloutEndZ: resultA.rolloutEndZ,
+            afterBurnerTriggered: resultA.afterBurnerTriggered,
+            afterBurnerStartX: resultA.afterBurnerStartX,
+            afterBurnerStartZ: resultA.afterBurnerStartZ,
             finalX: resultA.finalX,
             finalZ: resultA.finalZ,
             trajectory: resultA.trajectory,
@@ -1180,6 +1255,7 @@ function simulate_shot(power_player, club_info, shot, power_shot, altura, vento,
             bounceDistances: resultA.bounceDistances,
             bounceDistance: resultA.bounceDistance,
             rolloutDistance: resultA.rolloutDistance,
+            afterBurnerDistance: resultA.afterBurnerDistance,
             totalRunDistance: resultA.totalRunDistance
         };
 
@@ -1192,6 +1268,11 @@ function simulate_shot(power_player, club_info, shot, power_shot, altura, vento,
         pb: desvioByDegree(desvioYards, finalDistanceYards) / YARDS_TO_PB,
         bounceEndX: resultB.bounceEndX,
         bounceEndZ: resultB.bounceEndZ,
+        rolloutEndX: resultB.rolloutEndX,
+        rolloutEndZ: resultB.rolloutEndZ,
+        afterBurnerTriggered: resultB.afterBurnerTriggered,
+        afterBurnerStartX: resultB.afterBurnerStartX,
+        afterBurnerStartZ: resultB.afterBurnerStartZ,
         finalX: resultB.finalX,
         finalZ: resultB.finalZ,
         trajectory: resultB.trajectory,
@@ -1200,6 +1281,7 @@ function simulate_shot(power_player, club_info, shot, power_shot, altura, vento,
         bounceDistances: resultB.bounceDistances,
         bounceDistance: resultB.bounceDistance,
         rolloutDistance: resultB.rolloutDistance,
+        afterBurnerDistance: resultB.afterBurnerDistance,
         totalRunDistance: resultB.totalRunDistance
     };
 }
@@ -1279,6 +1361,7 @@ function calc(el) {
     let ground = checkValidInput(document.getElementById('ground').value)
     let bound = checkValidInput(document.getElementById('bound').value);
     let roll = checkValidInput(document.getElementById('roll').value);
+    let afterBurnerEnabled = document.getElementById('afterburner').checked;
     let spin = checkValidInput(document.getElementById('spin').value);
     let curve = checkValidInput(document.getElementById('curve').value);
     let slope_break = checkValidInputSlope(document.getElementById('slope_break').value);
@@ -1360,7 +1443,8 @@ function calc(el) {
         input_values.slope,
         power_percent,
         bound,
-        roll
+        roll,
+        afterBurnerEnabled
     );
 
     if (simulation.distance >= 0) {
@@ -1368,25 +1452,20 @@ function calc(el) {
         result.color = 'Green';
         const hwiFor = (desvioYards, distanceYards) =>
             desvioByDegree(desvioYards, distanceYards) / YARDS_TO_PB * dis;
+        const hwiChange = (startX, startZ, endX, endZ) =>
+            hwiFor(endX, endZ) - hwiFor(startX, startZ);
+        const displayedHwiValue = (hwi) => Number(hwi.toFixed(4));
         const aimFor = (hwi) => aim === 0 ? 'n/a' : (hwi / aim).toFixed(4);
         const carryX = simulation.desvio;
         const carryZ = simulation.distance;
         const bounceEndX = simulation.bounceEndX * DESVIO_SCALE_PANGYA_TO_YARD;
         const bounceEndZ = simulation.bounceEndZ / 3.2;
+        const rolloutEndX = simulation.rolloutEndX * DESVIO_SCALE_PANGYA_TO_YARD;
+        const rolloutEndZ = simulation.rolloutEndZ / 3.2;
         const finalX = simulation.finalX * DESVIO_SCALE_PANGYA_TO_YARD;
         const finalZ = simulation.finalZ / 3.2;
-        const hwiBounce = hwiFor(
-            bounceEndX - carryX,
-            bounceEndZ - carryZ
-        );
-        const hwiRollout = hwiFor(
-            finalX - bounceEndX,
-            finalZ - bounceEndZ
-        );
-        const hwiRun = hwiFor(
-            finalX - carryX,
-            finalZ - carryZ
-        );
+        const hwiBounce = hwiChange(carryX, carryZ, bounceEndX, bounceEndZ);
+        const hwiRollout = hwiChange(bounceEndX, bounceEndZ, rolloutEndX, rolloutEndZ);
         const hwiCarryBounce = hwiFor(
             bounceEndX,
             bounceEndZ
@@ -1395,39 +1474,75 @@ function calc(el) {
             finalX,
             finalZ
         );
-        let previousBounceX = simulation.desvio / DESVIO_SCALE_PANGYA_TO_YARD;
-        let previousBounceZ = simulation.distance * 3.2;
-        const bounceHwis = simulation.bouncePoints.map((point) => {
-            const hwi = hwiFor(
-                (point.x - previousBounceX) * DESVIO_SCALE_PANGYA_TO_YARD,
-                (point.z - previousBounceZ) / 3.2
+        const hwiAfterBurner = simulation.afterBurnerTriggered
+            ? hwiChange(rolloutEndX, rolloutEndZ, finalX, finalZ)
+            : 0;
+        const hwiRun = Number((
+            displayedHwiValue(hwiBounce) +
+            displayedHwiValue(hwiRollout) +
+            displayedHwiValue(hwiAfterBurner)
+        ).toFixed(4));
+        const stageMetrics = [
+            { name: 'Bounce', distance: simulation.bounceDistance, hwi: hwiBounce },
+            { name: 'Rollout', distance: simulation.rolloutDistance, hwi: hwiRollout },
+            { name: 'Run', distance: simulation.totalRunDistance, hwi: hwiRun }
+        ];
+        if (simulation.afterBurnerTriggered)
+            stageMetrics.push({
+                name: 'Afterburner',
+                distance: simulation.afterBurnerDistance,
+                hwi: hwiAfterBurner
+            });
+        const nonZeroStages = stageMetrics.filter((stage) => Math.abs(stage.distance) >= 0.0005);
+        const stageDistanceLines = nonZeroStages.map((stage) => `
+        <text style="color:Pink"><text style="font-size:16px">
+            ${stage.name} Distance : ${stage.distance.toFixed(3)}y
+        </text><br>`).join('');
+        const stageHwiLines = nonZeroStages.map((stage) => `
+        <text style="color:Pink"><text style="font-size:16px">
+            HWI (${stage.name}) : ${stage.hwi.toFixed(4)} pb
+        </text><br>`).join('');
+        const stageAimLines = nonZeroStages.map((stage) => `
+        <text style="color:Pink"><text style="font-size:16px">
+            AIM (${stage.name}) : ${aimFor(stage.hwi)} aim
+        </text><br>`).join('');
+        let previousBounceX = carryX;
+        let previousBounceZ = carryZ;
+        const bounceDetails = simulation.bouncePoints.map((point, index) => {
+            const distance = simulation.bounceDistances[index];
+            const pointX = point.x * DESVIO_SCALE_PANGYA_TO_YARD;
+            const pointZ = point.z / 3.2;
+            const hwi = hwiChange(
+                previousBounceX,
+                previousBounceZ,
+                pointX,
+                pointZ
             );
-            previousBounceX = point.x;
-            previousBounceZ = point.z;
-            return hwi;
-        });
-        const displayedBounceDistances = simulation.bounceDistances.slice(0, 10);
-        const bounceDistanceLines = displayedBounceDistances
-            .map((distance, index) => `
+            previousBounceX = pointX;
+            previousBounceZ = pointZ;
+            return { number: index + 1, distance: distance, hwi: hwi };
+        }).filter((bounce) => Math.abs(bounce.distance) >= 0.0005);
+        const displayedBounces = bounceDetails.slice(0, 10);
+        const bounceDistanceLines = displayedBounces
+            .map((bounce) => `
         <text style="color:Pink"><text style="font-size:16px">
-            Bounce ${index + 1} Distance : ${distance.toFixed(3)}y
+            Bounce ${bounce.number} Distance : ${bounce.distance.toFixed(3)}y
         </text><br>`)
             .join('');
-        const displayedBounceHwis = bounceHwis.slice(0, 10);
-        const bounceHwiLines = displayedBounceHwis
-            .map((hwi, index) => `
+        const bounceHwiLines = displayedBounces
+            .map((bounce) => `
         <text style="color:Pink"><text style="font-size:16px">
-            HWI (Bounce ${index + 1}) : ${hwi.toFixed(4)} pb
+            HWI (Bounce ${bounce.number}) : ${bounce.hwi.toFixed(4)} pb
         </text><br>`)
             .join('');
-        const bounceAimLines = displayedBounceHwis
-            .map((hwi, index) => `
+        const bounceAimLines = displayedBounces
+            .map((bounce) => `
         <text style="color:Pink"><text style="font-size:16px">
-            AIM (Bounce ${index + 1}) : ${aimFor(hwi)} aim
+            AIM (Bounce ${bounce.number}) : ${aimFor(bounce.hwi)} aim
         </text><br>`)
             .join('');
-        const remainingBounceNote = simulation.bounceCount > displayedBounceDistances.length
-            ? `<text style="color:Pink"><text style="font-size:16px">Showing first 10 of ${simulation.bounceCount} bounces.</text><br>`
+        const remainingBounceNote = bounceDetails.length > displayedBounces.length
+            ? `<text style="color:Pink"><text style="font-size:16px">Showing first 10 of ${bounceDetails.length} non-zero bounces.</text><br>`
             : '';
         result.innerHTML = `
         <b><text style="color:Pink"><text style="font-size:18px">General Data</text></b><br>
@@ -1440,15 +1555,7 @@ function calc(el) {
         <text style="color:Pink"><text style="font-size:16px">
             Carry + Run Distance : ${(simulation.distance + simulation.totalRunDistance).toFixed(3)}y
         </text><br><br>
-        <text style="color:Pink"><text style="font-size:16px">
-            Bounce Distance : ${simulation.bounceDistance.toFixed(3)}y
-        </text><br>
-        <text style="color:Pink"><text style="font-size:16px">
-            Final Rollout : ${simulation.rolloutDistance.toFixed(3)}y
-        </text><br>
-        <text style="color:Pink"><text style="font-size:16px">
-            Run Distance : ${simulation.totalRunDistance.toFixed(3)}y
-        </text><br>
+        ${stageDistanceLines}
         <br>
         <text style="color:Pink"><text style="font-size:16px">
             Bounces : ${simulation.bounceCount}
@@ -1468,15 +1575,7 @@ function calc(el) {
             HWI (Carry+Run) : ${hwiCarryBounceRollout.toFixed(4)} pb
         </text><br>
         <br>
-        <text style="color:Pink"><text style="font-size:16px">
-            HWI (Bounce) : ${hwiBounce.toFixed(4)} pb
-        </text><br>
-        <text style="color:Pink"><text style="font-size:16px">
-            HWI (Rollout) : ${hwiRollout.toFixed(4)} pb
-        </text><br>
-        <text style="color:Pink"><text style="font-size:16px">
-            HWI (Run) : ${hwiRun.toFixed(4)} pb
-        </text><br>
+        ${stageHwiLines}
         <br>
         <text style="color:Pink"><text style="font-size:16px">
             Bounces : ${simulation.bounceCount}
@@ -1495,15 +1594,7 @@ function calc(el) {
             AIM (Carry+Run) : ${aimFor(hwiCarryBounceRollout)} aim
         </text><br>
         <br>
-        <text style="color:Pink"><text style="font-size:16px">
-            AIM (Bounce) : ${aimFor(hwiBounce)} aim
-        </text><br>
-        <text style="color:Pink"><text style="font-size:16px">
-            AIM (Run) : ${aimFor(hwiRun)} aim
-        </text><br>
-        <text style="color:Pink"><text style="font-size:16px">
-            AIM (Rollout) : ${aimFor(hwiRollout)} aim
-        </text><br>
+        ${stageAimLines}
         <br>
         <text style="color:Pink"><text style="font-size:16px">
             Bounces : ${simulation.bounceCount}

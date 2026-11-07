@@ -1090,6 +1090,12 @@ function simulate_shot(power_player, club_info, shot, power_shot, altura, vento,
         let snapStartZ = carryZ;
         let snapDistance = 0;
         let snapPoint = null;
+        const bouncePeakPoints = [];
+        let currentBouncePeakPoint = {
+            x: carryX,
+            y: landingPoint.y,
+            z: carryZ
+        };
         const bounceDistances = [];
         if (usesCarryAfterBurner) {
             vball.velocity = new Vector3D(0, 0, 0);
@@ -1103,6 +1109,8 @@ function simulate_shot(power_player, club_info, shot, power_shot, altura, vento,
                 advancePangyaMotion(_00D083A0, false);
                 const move = vball.velocity.clone().multiplyScalar(_00D083A0);
                 if (groundContact && vball.velocity.y < 0) {
+                    if (currentBouncePeakPoint.y > landingPoint.y)
+                        bouncePeakPoints.push(currentBouncePeakPoint);
                     vball.position.x += move.x;
                     vball.position.z += move.z;
                     snapDistance = (vball.position.z - snapStartZ) / 3.2;
@@ -1124,6 +1132,14 @@ function simulate_shot(power_player, club_info, shot, power_shot, altura, vento,
                 }
 
                 if (move.y < 0 && vball.position.y + move.y <= landingPoint.y) {
+                    if (vball.position.y > currentBouncePeakPoint.y)
+                        currentBouncePeakPoint = {
+                            x: vball.position.x,
+                            y: vball.position.y,
+                            z: vball.position.z
+                        };
+                    if (currentBouncePeakPoint.y > landingPoint.y)
+                        bouncePeakPoints.push(currentBouncePeakPoint);
                     const impactFraction = Math.min(1, Math.max(0,
                         (landingPoint.y - vball.position.y) / move.y));
                     vball.position.x += move.x * impactFraction;
@@ -1140,9 +1156,20 @@ function simulate_shot(power_player, club_info, shot, power_shot, altura, vento,
                     snapStartZ = vball.position.z;
                     bounceCount++;
                     applyFlatGroundBounceResponse(vball.velocity.clone());
+                    currentBouncePeakPoint = {
+                        x: vball.position.x,
+                        y: vball.position.y,
+                        z: vball.position.z
+                    };
                     groundContact = true;
                 } else {
                     vball.position.add(move);
+                    if (vball.position.y > currentBouncePeakPoint.y)
+                        currentBouncePeakPoint = {
+                            x: vball.position.x,
+                            y: vball.position.y,
+                            z: vball.position.z
+                        };
                     groundContact = false;
                 }
 
@@ -1229,6 +1256,7 @@ function simulate_shot(power_player, club_info, shot, power_shot, altura, vento,
             snapStartZ: snapStartZ,
             snapPoint: snapPoint,
             cobraBeforeRisePoint: cobraBeforeRisePoint,
+            bouncePeakPoints: bouncePeakPoints,
             finalX: vball.position.x,
             finalZ: vball.position.z,
             trajectory: trajectory,
@@ -1269,6 +1297,7 @@ function simulate_shot(power_player, club_info, shot, power_shot, altura, vento,
             snapStartZ: resultA.snapStartZ,
             snapPoint: resultA.snapPoint,
             cobraBeforeRisePoint: resultA.cobraBeforeRisePoint,
+            bouncePeakPoints: resultA.bouncePeakPoints,
             finalX: resultA.finalX,
             finalZ: resultA.finalZ,
             trajectory: resultA.trajectory,
@@ -1301,6 +1330,7 @@ function simulate_shot(power_player, club_info, shot, power_shot, altura, vento,
             snapStartZ: resultA.snapStartZ,
             snapPoint: resultA.snapPoint,
             cobraBeforeRisePoint: resultA.cobraBeforeRisePoint,
+            bouncePeakPoints: resultA.bouncePeakPoints,
             finalX: resultA.finalX,
             finalZ: resultA.finalZ,
             trajectory: resultA.trajectory,
@@ -1333,6 +1363,7 @@ function simulate_shot(power_player, club_info, shot, power_shot, altura, vento,
         snapStartZ: resultB.snapStartZ,
         snapPoint: resultB.snapPoint,
         cobraBeforeRisePoint: resultB.cobraBeforeRisePoint,
+        bouncePeakPoints: resultB.bouncePeakPoints,
         finalX: resultB.finalX,
         finalZ: resultB.finalZ,
         trajectory: resultB.trajectory,
@@ -1519,7 +1550,8 @@ function calc(el) {
             simulation.distance + simulation.totalRunDistance,
             simulation.carryPoint,
             simulation.snapPoint,
-            simulation.cobraBeforeRisePoint
+            simulation.cobraBeforeRisePoint,
+            simulation.bouncePeakPoints
         );
         result.color = 'Green';
         const hwiFor = (desvioYards, distanceYards) =>
@@ -1706,16 +1738,18 @@ let lastBouncePoints = [];
 let lastCarryPoint = null;
 let lastSnapPoint = null;
 let lastCobraBeforeRisePoint = null;
+let lastBouncePeakPoints = [];
 let lastTerrainHeightMeters = 0;
 let lastCarryRunDistanceYards = 0;
 let lastLateralScaleToPb = 1;
 
-function drawTrajectory(trajectory, bouncePoints, terrainHeightMeters = 0, displayScale = 1, carryRunDistanceYards = 0, carryPoint = null, snapPoint = null, cobraBeforeRisePoint = null) {
+function drawTrajectory(trajectory, bouncePoints, terrainHeightMeters = 0, displayScale = 1, carryRunDistanceYards = 0, carryPoint = null, snapPoint = null, cobraBeforeRisePoint = null, bouncePeakPoints = []) {
     lastTrajectory = trajectory;
     lastBouncePoints = bouncePoints;
     lastCarryPoint = carryPoint;
     lastSnapPoint = snapPoint;
     lastCobraBeforeRisePoint = cobraBeforeRisePoint;
+    lastBouncePeakPoints = bouncePeakPoints;
     trajectoryHover = null;
     lastTerrainHeightMeters = terrainHeightMeters;
     lastCarryRunDistanceYards = carryRunDistanceYards;
@@ -2112,6 +2146,10 @@ function renderTrajectory() {
         ...(lastCobraBeforeRisePoint
             ? [{ point: lastCobraBeforeRisePoint, type: 'Before Cobra Rise' }]
             : []),
+        ...lastBouncePeakPoints.map((point, index) => ({
+            point,
+            type: `Bounce Peak ${index + 1}`
+        })),
         ...(lastSnapPoint ? [{ point: lastSnapPoint, type: 'Snap' }] : []),
         ...(lastCarryPoint ? [{ point: lastCarryPoint, type: 'Carry' }] : []),
         ...lastBouncePoints.map((point, index) => ({

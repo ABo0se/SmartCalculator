@@ -505,9 +505,10 @@ class QuadTree {
         this.cobra_init = -1;
 
         this.ball.position = options.position.clone();
+        this.ball.position.y += this.ball.diametro / 2;
 
         // Usa no Cobra
-        this.ball_position_init = options.position.clone();
+        this.ball_position_init = this.ball.position.clone();
 
         // Type distance
         this.club.type_distance = calculeTypeDistance(options.distance);
@@ -862,7 +863,7 @@ class QuadTree {
         }
 
         if (this.shot == SHOT_TYPE.SPIKE && this.spike_init < 0)
-            return new Vector3D(0.0, 0.0, 0.0);
+            return retVect;
         else if (this.shot == SHOT_TYPE.COBRA && this.cobra_init < 0)
             return retVect;
 
@@ -942,52 +943,44 @@ function simulate_shot(power_player, club_info, shot, power_shot, altura, vento,
         const afterBurnerLaunchVelocity = vball.velocity.clone();
 
         let count = 0;
-        let copy_ball = new Ball();
+        const previousBall = new Ball();
         const trajectory = [{ x: vball.position.x, y: vball.position.y, z: vball.position.z }];
         const bouncePoints = [];
         const limit_checking = 100000; // safety cap so a shot that never crosses altura_colision can't loop forever
 
-        do {
-            copy_ball.copy(vball);
+        let landingPoint = null;
+        while (count++ < limit_checking) {
+            previousBall.copy(vball);
             qt.ballProcess(_00D083A0);
             trajectory.push({ x: vball.position.x, y: vball.position.y, z: vball.position.z });
-        } while ((vball.position.y > altura_colision || vball.num_max_height == -1) && (count++) < limit_checking);
 
-        // The interpolation below only makes sense if the loop actually bracketed a real
-        // crossing: copy_ball above altura_colision, vball below it. If the shot never had
-        // enough power/height to climb above altura_colision in the first place, the loop
-        // instead exits once num_max_height resolves while the ball is already resting near
-        // the ground (both samples far below altura_colision, close to each other). Treat
-        // that as "this shot can't reach the target's elevation" instead of interpolating
-        // through it.
-        if (count >= limit_checking || copy_ball.position.y <= altura_colision)
+            if (vball.num_max_height < 0)
+                continue;
+
+            const previousHeight = previousBall.position.y;
+            const currentHeight = vball.position.y;
+            if (previousHeight >= altura_colision && currentHeight <= altura_colision &&
+                previousHeight !== currentHeight) {
+                const fraction = (previousHeight - altura_colision) / (previousHeight - currentHeight);
+                landingPoint = {
+                    x: previousBall.position.x + (vball.position.x - previousBall.position.x) * fraction,
+                    y: altura_colision,
+                    z: previousBall.position.z + (vball.position.z - previousBall.position.z) * fraction
+                };
+                break;
+            }
+
+            if (currentHeight < altura_colision)
+                return null;
+        }
+
+        if (!landingPoint)
             return null;
 
-        const heightDelta = vball.position.y - copy_ball.position.y;
-
-        // Near-zero denominator means the two sampled points are essentially the same
-        // height (e.g. the ball is rolling/settling rather than actively descending through
-        // altura_colision) -- dividing here would blow last_step up to a huge, meaningless
-        // multiplier and catapult the ball to a nonsense landing position.
-        if (Math.abs(heightDelta) < 1e-6)
-            return null;
-
-        const last_step = Math.min(1, Math.max(0,
-            (altura_colision - copy_ball.position.y) / heightDelta));
-        const steppedPosition = vball.position.clone();
-
-        vball.copy(copy_ball);
-        // Quadtree bounceProcess applies forces for the full tick but moves by its final argument.
-        qt.ballProcess(_00D083A0, _00D083A0 * last_step);
-        vball.position.y = altura_colision;
-        const landingPoint = { x: vball.position.x, y: vball.position.y, z: vball.position.z };
-        const lastPoint = trajectory[trajectory.length - 1];
-        if (lastPoint.x === steppedPosition.x &&
-            lastPoint.y === steppedPosition.y &&
-            lastPoint.z === steppedPosition.z)
-            trajectory[trajectory.length - 1] = landingPoint;
-        else
-            trajectory.push(landingPoint);
+        trajectory[trajectory.length - 1] = landingPoint;
+        vball.position.x = landingPoint.x;
+        vball.position.y = landingPoint.y;
+        vball.position.z = landingPoint.z;
 
         const carryZ = vball.position.z;
         const carryX = vball.position.x;
@@ -1083,12 +1076,39 @@ function simulate_shot(power_player, club_info, shot, power_shot, altura, vento,
             applyFlatGroundBounceResponse(impactVelocity);
 
             while (bounceSteps < 10000) {
+                const previousVelocity = vball.velocity.clone();
                 advancePangyaMotion(_00D083A0, false);
                 if (groundContact && vball.velocity.y < 0) {
+                    if (previousVelocity.y > 0) {
+                        const returnFraction = (2 * previousVelocity.y) /
+                            (previousVelocity.y - vball.velocity.y);
+                        if (returnFraction > 1) {
+                            vball.position.x += (previousVelocity.x + vball.velocity.x) *
+                                0.5 * _00D083A0;
+                            vball.position.y += (previousVelocity.y + vball.velocity.y) *
+                                0.5 * _00D083A0;
+                            vball.position.z += (previousVelocity.z + vball.velocity.z) *
+                                0.5 * _00D083A0;
+                            groundContact = false;
+                            bounceSteps++;
+                            trajectory.push({ x: vball.position.x, y: vball.position.y, z: vball.position.z });
+                            continue;
+                        }
+
+                        const returnVelocityX = previousVelocity.x +
+                            (vball.velocity.x - previousVelocity.x) * returnFraction;
+                        const returnVelocityZ = previousVelocity.z +
+                            (vball.velocity.z - previousVelocity.z) * returnFraction;
+                        vball.position.x += (previousVelocity.x + returnVelocityX) *
+                            0.5 * _00D083A0 * returnFraction;
+                        vball.position.z += (previousVelocity.z + returnVelocityZ) *
+                            0.5 * _00D083A0 * returnFraction;
+                    }
                     vball.velocity.y = 0;
                     vball.position.y = landingPoint.y;
                     transitionedToRoll = true;
                     afterBurnerPending = backspinAfterBounce;
+                    trajectory.push({ x: vball.position.x, y: landingPoint.y, z: vball.position.z });
                     break;
                 }
 
@@ -1107,7 +1127,10 @@ function simulate_shot(power_player, club_info, shot, power_shot, altura, vento,
                     bounceDistances.push((vball.position.z - previousBounceZ) / 3.2);
                     previousBounceZ = vball.position.z;
                     bounceCount++;
-                    applyFlatGroundBounceResponse(vball.velocity.clone());
+                    const impactVelocity = previousVelocity.clone().add(
+                        vball.velocity.clone().sub(previousVelocity).multiplyScalar(impactFraction)
+                    );
+                    applyFlatGroundBounceResponse(impactVelocity);
                     groundContact = true;
                 } else {
                     vball.position.add(move);
@@ -1687,9 +1710,7 @@ function renderTrajectory() {
             point.x * DESVIO_SCALE_PANGYA_TO_YARD * lastLateralScaleToPb
         ),
         distance: lastTrajectory.map(point => point.z / 3.2),
-        height: lastTrajectory.map((point, index) =>
-            (index === 0 ? golfRadiusInternal : point.y) * heightUnitToMeters
-        )
+        height: lastTrajectory.map(point => point.y * heightUnitToMeters)
     };
     const bounds = (items, zoom, symmetric = false) => {
         let min = Math.min(0, ...items);

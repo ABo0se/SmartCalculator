@@ -504,9 +504,10 @@ class QuadTree {
         this.cobra_init = -1;
 
         this.ball.position = options.position.clone();
+        this.ball.position.y += this.ball.diametro / 2;
 
         // Usa no Cobra
-        this.ball_position_init = options.position.clone();
+        this.ball_position_init = this.ball.position.clone();
 
         // Type distance
         this.club.type_distance = calculeTypeDistance(options.distance);
@@ -861,7 +862,7 @@ class QuadTree {
         }
 
         if (this.shot == SHOT_TYPE.SPIKE && this.spike_init < 0)
-            return new Vector3D(0.0, 0.0, 0.0);
+            return retVect;
         else if (this.shot == SHOT_TYPE.COBRA && this.cobra_init < 0)
             return retVect;
 
@@ -940,42 +941,34 @@ function simulate_shot(power_player, club_info, shot, power_shot, altura, vento,
         qt.initShot(vball, vclub, wind, options);
 
         let count = 0;
-        let copy_ball = new Ball();
+        const previousBall = new Ball();
+        let landing = null;
         const limit_checking = 100000; // safety cap so a shot that never crosses altura_colision can't loop forever
 
-        do {
-            copy_ball.copy(vball);
+        while (count++ < limit_checking) {
+            previousBall.copy(vball);
             qt.ballProcess(_00D083A0);
-        } while ((vball.position.y > altura_colision || vball.num_max_height == -1) && (count++) < limit_checking);
 
-        // The interpolation below only makes sense if the loop actually bracketed a real
-        // crossing: copy_ball above altura_colision, vball below it. If the shot never had
-        // enough power/height to climb above altura_colision in the first place, the loop
-        // instead exits once num_max_height resolves while the ball is already resting near
-        // the ground (both samples far below altura_colision, close to each other). Treat
-        // that as "this shot can't reach the target's elevation" instead of interpolating
-        // through it.
-        if (count >= limit_checking || copy_ball.position.y <= altura_colision)
-            return null;
+            if (vball.num_max_height < 0)
+                continue;
 
-        const heightDelta = vball.position.y - copy_ball.position.y;
+            const previousHeight = previousBall.position.y;
+            const currentHeight = vball.position.y;
+            if (previousHeight >= altura_colision && currentHeight <= altura_colision &&
+                previousHeight !== currentHeight) {
+                const fraction = (previousHeight - altura_colision) / (previousHeight - currentHeight);
+                landing = {
+                    x: previousBall.position.x + (vball.position.x - previousBall.position.x) * fraction,
+                    z: previousBall.position.z + (vball.position.z - previousBall.position.z) * fraction
+                };
+                break;
+            }
 
-        // Near-zero denominator means the two sampled points are essentially the same
-        // height (e.g. the ball is rolling/settling rather than actively descending through
-        // altura_colision) -- dividing here would blow last_step up to a huge, meaningless
-        // multiplier and catapult the ball to a nonsense landing position.
-        if (Math.abs(heightDelta) < 1e-6)
-            return null;
+            if (currentHeight < altura_colision)
+                return null;
+        }
 
-        let last_step = Math.abs((altura_colision - copy_ball.position.y) / heightDelta);
-
-        vball.copy(copy_ball);
-        qt.ballProcess(_00D083A0, _00D083A0 * last_step);
-
-        return {
-            z: vball.position.z,
-            x: vball.position.x
-        };
+        return landing;
     };
 
     const firstEstimate = 58.0;

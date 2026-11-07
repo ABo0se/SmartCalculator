@@ -550,15 +550,16 @@ class QuadTree {
         this.cobra_init = -1;
 
         this.ball.position = options.position.clone();
+        this.ball.position.y += this.ball.diametro / 2;
 
         // Usa no Cobra
-        this.ball_position_init = options.position.clone();
+        this.ball_position_init = this.ball.position.clone();
 
         // Type distance
         this.club.type_distance = calculeTypeDistance(options.distance);
 
-        // init max_height
-        this.ball.max_height = this.ball.position.y;
+        // Track the ball's lower bound, not its center.
+        this.ball.max_height = this.ball.position.y - this.ball.diametro / 2;
 
         this.ball.count = 0;
         this.ball.num_max_height = -1;
@@ -855,7 +856,7 @@ class QuadTree {
 
         if (this.ball.velocity.y < 0 && this.ball.num_max_height < 0) {
 
-            this.ball.max_height = this.ball.position.y;
+            this.ball.max_height = this.ball.position.y - this.ball.diametro / 2;
             this.ball.num_max_height = this.ball.count;
         }
 
@@ -918,11 +919,6 @@ class QuadTree {
         }
 
         if (this.shot == SHOT_TYPE.SPIKE && this.spike_init < 0) {
-            // Matches the original `return new Vector3D(0.0, 0.0, 0.0);`:
-            // discard whatever was just accumulated above and hand back zero.
-            retVect.x = 0.0;
-            retVect.y = 0.0;
-            retVect.z = 0.0;
             return retVect;
         } else if (this.shot == SHOT_TYPE.COBRA && this.cobra_init < 0)
             return retVect;
@@ -1038,42 +1034,37 @@ const find_power = (power_player, club_info, shot, power_shot, distancia, altura
 
         let count = 0;
 
-        let copy_ball = new Ball();
+        const previousBall = new Ball();
 
-        do {
-
-            copy_ball.copy(vball);
-
+        while (count++ < limit_checking) {
+            previousBall.copy(vball);
             qt.ballProcess(_00D083A0);
 
-        }while((vball.position.y > altura_colision || vball.num_max_height == -1) && (count++) < limit_checking)
+            if (vball.num_max_height < 0)
+                continue;
 
-        // If the ball never actually got above altura_colision, this shot definitively
-        // does not have enough power to clear the target's elevation -- that's a real,
-        // reliably-signed undershoot, no interpolation needed (and none is safe: both
-        // samples are on the same side of the threshold).
-        if (copy_ball.position.y <= altura_colision)
-            return distanciaScale; // treat as a large, correctly-signed undershoot
+            const previousHeight = previousBall.position.y;
+            const currentHeight = vball.position.y;
+            if (previousHeight >= altura_colision && currentHeight <= altura_colision &&
+                previousHeight !== currentHeight) {
+                const fraction = (previousHeight - altura_colision) / (previousHeight - currentHeight);
+                vball.position.x = previousBall.position.x +
+                    (vball.position.x - previousBall.position.x) * fraction;
+                vball.position.y = altura_colision;
+                vball.position.z = previousBall.position.z +
+                    (vball.position.z - previousBall.position.z) * fraction;
 
-        const heightDelta = vball.position.y - copy_ball.position.y;
+                if (Math.abs(distanciaScale - vball.position.z) <= margin)
+                    return 0;
 
-        // Genuine crossing (copy_ball above, vball below) but the two samples are almost
-        // the same height -- the ball is essentially grazing the threshold. Interpolating
-        // here divides by a near-zero number and explodes; since we're already right at
-        // the crossing, treat it as "close enough" instead.
-        if (Math.abs(heightDelta) < 1e-6)
-            return 0;
+                return distanciaScale - vball.position.z;
+            }
 
-        let last_step = Math.abs((altura_colision - copy_ball.position.y) / heightDelta);
+            if (currentHeight < altura_colision)
+                return distanciaScale;
+        }
 
-        vball.copy(copy_ball);
-
-        qt.ballProcess(_00D083A0, _00D083A0 * last_step);
-
-        if (Math.abs(distanciaScale - vball.position.z) <= margin)
-            return 0;
-
-        return distanciaScale - vball.position.z;
+        return distanciaScale;
     }
 
     const qt = new QuadTree();

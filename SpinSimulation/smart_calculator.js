@@ -2164,7 +2164,7 @@ function renderTrajectory() {
             ? { x: point.x, y: golfRadiusMeters }
             : point),
         heightMarkers,
-        `Start +${golfRadiusMeters.toFixed(3)} m`,
+        '',
         lastTerrainHeightMeters
     );
 }

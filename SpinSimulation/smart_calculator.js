@@ -889,10 +889,14 @@ class QuadTree {
     }
 }
 
-function simulate_shot(power_player, club_info, shot, power_shot, altura, vento, angulo, terreno, spin, curva, slope, percentShot, bound, roll, afterBurnerEnabled = true) {
+function simulate_shot(power_player, club_info, shot, power_shot, altura, vento, angulo, terreno, spin, curva, slope, percentShot, bound, roll, afterBurnerEnabled = true, rainWeather = false) {
 
     const simulate = (distanceEstimate) => {
         const altura_colision_raw = altura * 1.094 * 3.2;
+        const isRain = rainWeather;
+        const weatherBounceCoefficient = isRain ? 0.9 : 1;
+        const bounceCoefficient = weatherBounceCoefficient * bound;
+        const effectiveRoll = roll * (isRain ? 1.13 : 1);
         const vball = new Ball();
         const vclub = club;
         const wind = new Wind();
@@ -949,9 +953,18 @@ function simulate_shot(power_player, club_info, shot, power_shot, altura, vento,
         const limit_checking = 100000; // safety cap so a shot that never crosses altura_colision can't loop forever
 
         let landingPoint = null;
+        let cobraBeforeRisePoint = null;
         while (count++ < limit_checking) {
             previousBall.copy(vball);
+            const cobraWasInitialized = qt.cobra_init >= 0;
             qt.ballProcess(_00D083A0);
+            if (!cobraWasInitialized && qt.cobra_init >= 0) {
+                cobraBeforeRisePoint = {
+                    x: vball.position.x,
+                    y: vball.position.y,
+                    z: vball.position.z
+                };
+            }
             trajectory.push({ x: vball.position.x, y: vball.position.y, z: vball.position.z });
 
             if (vball.num_max_height < 0)
@@ -1000,10 +1013,17 @@ function simulate_shot(power_player, club_info, shot, power_shot, altura, vento,
         const applyFlatGroundBounceResponse = (incomingVelocity) => {
             vball.rotation_spin = Math.min(vball.rotation_spin, 0);
             const spinFactor = initialSpin * 0.1 + 0.3;
-            const keep = 1 - (1 - bound) * spinFactor;
-            vball.velocity.x = incomingVelocity.x * keep;
-            vball.velocity.z = incomingVelocity.z * keep;
-            vball.velocity.y = -incomingVelocity.y * bound;
+            const normal = new Vector3D(0, 1, 0);
+            const perpendicular = normal.clone().multiplyScalar(
+                -(normal.x * incomingVelocity.x +
+                    normal.y * incomingVelocity.y +
+                    normal.z * incomingVelocity.z)
+            );
+            const parallel = incomingVelocity.clone().add(perpendicular);
+            const bounce = perpendicular.clone().multiplyScalar(bounceCoefficient);
+            const keep = 1 - (1 - bounceCoefficient) * spinFactor;
+
+            vball.velocity = parallel.multiplyScalar(keep).add(bounce);
         };
 
         const advancePangyaMotion = (step, grounded) => {
@@ -1015,7 +1035,7 @@ function simulate_shot(power_player, club_info, shot, power_shot, altura, vento,
 
             if (grounded) {
                 const groundSpeed = Math.hypot(vball.velocity.x, vball.velocity.z);
-                const frictionMagnitude = QUADTREE_GRAVITY * roll * vball.mass;
+                const frictionMagnitude = QUADTREE_GRAVITY * effectiveRoll * vball.mass;
                 if (groundSpeed > 0)
                     force.add(vball.velocity.clone().multiplyScalar(-frictionMagnitude / groundSpeed));
             }
@@ -1066,6 +1086,10 @@ function simulate_shot(power_player, club_info, shot, power_shot, altura, vento,
         let transitionedToRoll = false;
         let groundContact = true;
         let previousBounceZ = carryZ;
+        let snapStartX = carryX;
+        let snapStartZ = carryZ;
+        let snapDistance = 0;
+        let snapPoint = null;
         const bounceDistances = [];
         if (usesCarryAfterBurner) {
             vball.velocity = new Vector3D(0, 0, 0);
@@ -1076,43 +1100,29 @@ function simulate_shot(power_player, club_info, shot, power_shot, altura, vento,
             applyFlatGroundBounceResponse(impactVelocity);
 
             while (bounceSteps < 10000) {
-                const previousVelocity = vball.velocity.clone();
                 advancePangyaMotion(_00D083A0, false);
+                const move = vball.velocity.clone().multiplyScalar(_00D083A0);
                 if (groundContact && vball.velocity.y < 0) {
-                    if (previousVelocity.y > 0) {
-                        const returnFraction = (2 * previousVelocity.y) /
-                            (previousVelocity.y - vball.velocity.y);
-                        if (returnFraction > 1) {
-                            vball.position.x += (previousVelocity.x + vball.velocity.x) *
-                                0.5 * _00D083A0;
-                            vball.position.y += (previousVelocity.y + vball.velocity.y) *
-                                0.5 * _00D083A0;
-                            vball.position.z += (previousVelocity.z + vball.velocity.z) *
-                                0.5 * _00D083A0;
-                            groundContact = false;
-                            bounceSteps++;
-                            trajectory.push({ x: vball.position.x, y: vball.position.y, z: vball.position.z });
-                            continue;
-                        }
-
-                        const returnVelocityX = previousVelocity.x +
-                            (vball.velocity.x - previousVelocity.x) * returnFraction;
-                        const returnVelocityZ = previousVelocity.z +
-                            (vball.velocity.z - previousVelocity.z) * returnFraction;
-                        vball.position.x += (previousVelocity.x + returnVelocityX) *
-                            0.5 * _00D083A0 * returnFraction;
-                        vball.position.z += (previousVelocity.z + returnVelocityZ) *
-                            0.5 * _00D083A0 * returnFraction;
-                    }
+                    vball.position.x += move.x;
+                    vball.position.z += move.z;
+                    snapDistance = (vball.position.z - snapStartZ) / 3.2;
                     vball.velocity.y = 0;
                     vball.position.y = landingPoint.y;
+                    snapPoint = {
+                        x: vball.position.x,
+                        y: vball.position.y,
+                        z: vball.position.z
+                    };
                     transitionedToRoll = true;
                     afterBurnerPending = backspinAfterBounce;
-                    trajectory.push({ x: vball.position.x, y: landingPoint.y, z: vball.position.z });
+                    trajectory.push({
+                        x: vball.position.x,
+                        y: vball.position.y,
+                        z: vball.position.z
+                    });
                     break;
                 }
 
-                const move = vball.velocity.clone().multiplyScalar(_00D083A0);
                 if (move.y < 0 && vball.position.y + move.y <= landingPoint.y) {
                     const impactFraction = Math.min(1, Math.max(0,
                         (landingPoint.y - vball.position.y) / move.y));
@@ -1126,11 +1136,10 @@ function simulate_shot(power_player, club_info, shot, power_shot, altura, vento,
                     });
                     bounceDistances.push((vball.position.z - previousBounceZ) / 3.2);
                     previousBounceZ = vball.position.z;
+                    snapStartX = vball.position.x;
+                    snapStartZ = vball.position.z;
                     bounceCount++;
-                    const impactVelocity = previousVelocity.clone().add(
-                        vball.velocity.clone().sub(previousVelocity).multiplyScalar(impactFraction)
-                    );
-                    applyFlatGroundBounceResponse(impactVelocity);
+                    applyFlatGroundBounceResponse(vball.velocity.clone());
                     groundContact = true;
                 } else {
                     vball.position.add(move);
@@ -1151,10 +1160,13 @@ function simulate_shot(power_player, club_info, shot, power_shot, altura, vento,
 
         const bounceEndX = vball.position.x;
         const bounceEndZ = vball.position.z;
-        const bounceDistance = (bounceEndZ - carryZ) / 3.2;
+        const bounceDistance = bounceDistances.reduce(
+            (total, distance) => total + distance,
+            snapDistance
+        );
         let rolloutEndX = bounceEndX;
         let rolloutEndZ = bounceEndZ;
-        const rollStopSpeed = QUADTREE_GRAVITY * roll * _00D083A0;
+        const rollStopSpeed = QUADTREE_GRAVITY * effectiveRoll * _00D083A0;
         const rollUntilStop = () => {
             let steps = 0;
             while (steps < 10000) {
@@ -1197,6 +1209,11 @@ function simulate_shot(power_player, club_info, shot, power_shot, altura, vento,
             lastTrajectoryPoint.z !== vball.position.z)
             trajectory.push({ x: vball.position.x, y: vball.position.y, z: vball.position.z });
 
+        const rolloutDistance = (rolloutEndZ - bounceEndZ) / 3.2;
+        const afterBurnerDistance = afterBurnerTriggered
+            ? (vball.position.z - afterBurnerStartZ) / 3.2
+            : 0;
+
         return {
             z: carryZ,
             x: carryX,
@@ -1207,18 +1224,22 @@ function simulate_shot(power_player, club_info, shot, power_shot, altura, vento,
             afterBurnerTriggered: afterBurnerTriggered,
             afterBurnerStartX: afterBurnerStartX,
             afterBurnerStartZ: afterBurnerStartZ,
+            snapDistance: snapDistance,
+            snapStartX: snapStartX,
+            snapStartZ: snapStartZ,
+            snapPoint: snapPoint,
+            cobraBeforeRisePoint: cobraBeforeRisePoint,
             finalX: vball.position.x,
             finalZ: vball.position.z,
             trajectory: trajectory,
+            carryPoint: { x: carryX, y: landingPoint.y, z: carryZ },
             bouncePoints: bouncePoints,
             bounceCount: bounceCount,
             bounceDistances: bounceDistances,
             bounceDistance: bounceDistance,
-            rolloutDistance: (rolloutEndZ - bounceEndZ) / 3.2,
-            afterBurnerDistance: afterBurnerTriggered
-                ? (vball.position.z - afterBurnerStartZ) / 3.2
-                : 0,
-            totalRunDistance: (vball.position.z - carryZ) / 3.2
+            rolloutDistance: rolloutDistance,
+            afterBurnerDistance: afterBurnerDistance,
+            totalRunDistance: bounceDistance + rolloutDistance + afterBurnerDistance
         };
     };
 
@@ -1243,9 +1264,15 @@ function simulate_shot(power_player, club_info, shot, power_shot, altura, vento,
             afterBurnerTriggered: resultA.afterBurnerTriggered,
             afterBurnerStartX: resultA.afterBurnerStartX,
             afterBurnerStartZ: resultA.afterBurnerStartZ,
+            snapDistance: resultA.snapDistance,
+            snapStartX: resultA.snapStartX,
+            snapStartZ: resultA.snapStartZ,
+            snapPoint: resultA.snapPoint,
+            cobraBeforeRisePoint: resultA.cobraBeforeRisePoint,
             finalX: resultA.finalX,
             finalZ: resultA.finalZ,
             trajectory: resultA.trajectory,
+            carryPoint: resultA.carryPoint,
             bouncePoints: resultA.bouncePoints,
             bounceCount: resultA.bounceCount,
             bounceDistances: resultA.bounceDistances,
@@ -1269,9 +1296,15 @@ function simulate_shot(power_player, club_info, shot, power_shot, altura, vento,
             afterBurnerTriggered: resultA.afterBurnerTriggered,
             afterBurnerStartX: resultA.afterBurnerStartX,
             afterBurnerStartZ: resultA.afterBurnerStartZ,
+            snapDistance: resultA.snapDistance,
+            snapStartX: resultA.snapStartX,
+            snapStartZ: resultA.snapStartZ,
+            snapPoint: resultA.snapPoint,
+            cobraBeforeRisePoint: resultA.cobraBeforeRisePoint,
             finalX: resultA.finalX,
             finalZ: resultA.finalZ,
             trajectory: resultA.trajectory,
+            carryPoint: resultA.carryPoint,
             bouncePoints: resultA.bouncePoints,
             bounceCount: resultA.bounceCount,
             bounceDistances: resultA.bounceDistances,
@@ -1295,9 +1328,15 @@ function simulate_shot(power_player, club_info, shot, power_shot, altura, vento,
         afterBurnerTriggered: resultB.afterBurnerTriggered,
         afterBurnerStartX: resultB.afterBurnerStartX,
         afterBurnerStartZ: resultB.afterBurnerStartZ,
+        snapDistance: resultB.snapDistance,
+        snapStartX: resultB.snapStartX,
+        snapStartZ: resultB.snapStartZ,
+        snapPoint: resultB.snapPoint,
+        cobraBeforeRisePoint: resultB.cobraBeforeRisePoint,
         finalX: resultB.finalX,
         finalZ: resultB.finalZ,
         trajectory: resultB.trajectory,
+        carryPoint: resultB.carryPoint,
         bouncePoints: resultB.bouncePoints,
         bounceCount: resultB.bounceCount,
         bounceDistances: resultB.bounceDistances,
@@ -1384,6 +1423,7 @@ function calc(el) {
     let bound = checkValidInput(document.getElementById('bound').value);
     let roll = checkValidInput(document.getElementById('roll').value);
     let afterBurnerEnabled = document.getElementById('afterburner').checked;
+    let rainWeather = document.getElementById('rain-weather').checked;
     let spin = checkValidInput(document.getElementById('spin').value);
     let curve = checkValidInput(document.getElementById('curve').value);
     let slope_break = checkValidInputSlope(document.getElementById('slope_break').value);
@@ -1466,7 +1506,8 @@ function calc(el) {
         power_percent,
         bound,
         roll,
-        afterBurnerEnabled
+        afterBurnerEnabled,
+        rainWeather
     );
 
     if (simulation.distance >= 0) {
@@ -1475,7 +1516,10 @@ function calc(el) {
             simulation.bouncePoints,
             height,
             dis,
-            simulation.distance + simulation.totalRunDistance
+            simulation.distance + simulation.totalRunDistance,
+            simulation.carryPoint,
+            simulation.snapPoint,
+            simulation.cobraBeforeRisePoint
         );
         result.color = 'Green';
         const hwiFor = (desvioYards, distanceYards) =>
@@ -1492,7 +1536,10 @@ function calc(el) {
         const rolloutEndZ = simulation.rolloutEndZ / 3.2;
         const finalX = simulation.finalX * DESVIO_SCALE_PANGYA_TO_YARD;
         const finalZ = simulation.finalZ / 3.2;
+        const snapStartX = simulation.snapStartX * DESVIO_SCALE_PANGYA_TO_YARD;
+        const snapStartZ = simulation.snapStartZ / 3.2;
         const hwiBounce = hwiChange(carryX, carryZ, bounceEndX, bounceEndZ);
+        const hwiSnap = hwiChange(snapStartX, snapStartZ, bounceEndX, bounceEndZ);
         const hwiRollout = hwiChange(bounceEndX, bounceEndZ, rolloutEndX, rolloutEndZ);
         const hwiCarryBounce = hwiFor(
             bounceEndX,
@@ -1510,8 +1557,10 @@ function calc(el) {
             displayedHwiValue(hwiRollout) +
             displayedHwiValue(hwiAfterBurner)
         ).toFixed(4));
+        // Snap is shown as a breakdown of Bounce, so Run must not add it twice.
         const stageMetrics = [
             { name: 'Bounce', distance: simulation.bounceDistance, hwi: hwiBounce },
+            { name: 'Snap', distance: simulation.snapDistance, hwi: hwiSnap },
             { name: 'Rollout', distance: simulation.rolloutDistance, hwi: hwiRollout }
         ];
         if (simulation.afterBurnerTriggered)
@@ -1553,24 +1602,29 @@ function calc(el) {
             );
             previousBounceX = pointX;
             previousBounceZ = pointZ;
-            return { number: index + 1, distance: distance, hwi: hwi };
-        }).filter((bounce) => Math.abs(bounce.distance) >= 0.0005);
+            return {
+                number: index + 1,
+                label: `Bounce ${index + 1}`,
+                distance: distance,
+                hwi: hwi
+            };
+        });
         const bounceDistanceLines = bounceDetails
             .map((bounce) => `
         <text style="color:Pink"><text style="font-size:16px">
-            Bounce ${bounce.number} Distance : ${bounce.distance.toFixed(3)}y
+            ${bounce.label} Distance : ${bounce.distance.toFixed(3)}y
         </text><br>`)
             .join('');
         const bounceHwiLines = bounceDetails
             .map((bounce) => `
         <text style="color:Pink"><text style="font-size:16px">
-            HWI (Bounce ${bounce.number}) : ${bounce.hwi.toFixed(4)} pb
+            HWI (${bounce.label}) : ${bounce.hwi.toFixed(4)} pb
         </text><br>`)
             .join('');
         const bounceAimLines = bounceDetails
             .map((bounce) => `
         <text style="color:Pink"><text style="font-size:16px">
-            AIM (Bounce ${bounce.number}) : ${aimFor(bounce.hwi)} aim
+            AIM (${bounce.label}) : ${aimFor(bounce.hwi)} aim
         </text><br>`)
             .join('');
         result.innerHTML = `
@@ -1646,15 +1700,23 @@ const trajectoryPan = {
 let trajectoryPlotRanges = {};
 let activeTrajectoryPan = null;
 let activeTrajectoryZoom = null;
+let trajectoryHover = null;
 let lastTrajectory = [];
 let lastBouncePoints = [];
+let lastCarryPoint = null;
+let lastSnapPoint = null;
+let lastCobraBeforeRisePoint = null;
 let lastTerrainHeightMeters = 0;
 let lastCarryRunDistanceYards = 0;
 let lastLateralScaleToPb = 1;
 
-function drawTrajectory(trajectory, bouncePoints, terrainHeightMeters = 0, displayScale = 1, carryRunDistanceYards = 0) {
+function drawTrajectory(trajectory, bouncePoints, terrainHeightMeters = 0, displayScale = 1, carryRunDistanceYards = 0, carryPoint = null, snapPoint = null, cobraBeforeRisePoint = null) {
     lastTrajectory = trajectory;
     lastBouncePoints = bouncePoints;
+    lastCarryPoint = carryPoint;
+    lastSnapPoint = snapPoint;
+    lastCobraBeforeRisePoint = cobraBeforeRisePoint;
+    trajectoryHover = null;
     lastTerrainHeightMeters = terrainHeightMeters;
     lastCarryRunDistanceYards = carryRunDistanceYards;
     lastLateralScaleToPb = displayScale / YARDS_TO_PB;
@@ -1872,9 +1934,149 @@ function renderTrajectory() {
             const x = xToCanvas(point.x);
             const y = yToCanvas(point.y);
             context.beginPath();
-            context.arc(x, y, 3.5, 0, Math.PI * 2);
-            context.fillStyle = 'yellow';
+            const markerStyle = {
+                'Snap': { radius: 5, color: 'magenta' },
+                'Height Peak': { radius: 5, color: 'red' },
+                'Cobra Before Peak': { radius: 5, color: 'lime' }
+            }[point.type] || { radius: 3.5, color: 'yellow' };
+            context.arc(x, y, markerStyle.radius, 0, Math.PI * 2);
+            context.fillStyle = markerStyle.color;
             context.fill();
+        }
+        const hover = trajectoryHover;
+        if (hover && hover.panelId === panelId && !activeTrajectoryPan && !activeTrajectoryZoom) {
+            const pointerX = Math.min(right, Math.max(left, hover.x));
+            const pointerY = Math.min(bottom, Math.max(top, hover.y));
+            let hoverX = pointerX;
+            let hoverY = pointerY;
+            let valueX = xRange.min + (pointerX - left) / plotWidth * (xRange.max - xRange.min);
+            let valueY = yRange.max - (pointerY - top) / plotHeight * (yRange.max - yRange.min);
+            let snapped = false;
+            const importantPoints = [
+                ...markerPoints,
+                ...(pathPoints.length > 0
+                    ? [
+                        { ...pathPoints[0], type: 'Start' },
+                        { ...pathPoints[pathPoints.length - 1], type: 'End' }
+                    ]
+                    : [])
+            ];
+            let closestPoint = null;
+            let closestPointDistance = Infinity;
+
+            for (const point of importantPoints) {
+                const pointX = xToCanvas(point.x);
+                const pointY = yToCanvas(point.y);
+                if (pointX < left || pointX > right || pointY < top || pointY > bottom)
+                    continue;
+
+                const distance = Math.hypot(pointX - pointerX, pointY - pointerY);
+                if (distance < closestPointDistance) {
+                    closestPoint = point;
+                    closestPointDistance = distance;
+                }
+            }
+
+            if (closestPoint && closestPointDistance <= 14) {
+                hoverX = xToCanvas(closestPoint.x);
+                hoverY = yToCanvas(closestPoint.y);
+                valueX = closestPoint.x;
+                valueY = closestPoint.y;
+                snapped = true;
+            } else {
+                let closestLinePoint = null;
+                let closestLineDistance = Infinity;
+
+                for (let index = 1; index < pathPoints.length; index++) {
+                    const start = pathPoints[index - 1];
+                    const end = pathPoints[index];
+                    const startX = xToCanvas(start.x);
+                    const startY = yToCanvas(start.y);
+                    const endX = xToCanvas(end.x);
+                    const endY = yToCanvas(end.y);
+                    const segmentX = endX - startX;
+                    const segmentY = endY - startY;
+                    const segmentLengthSquared = segmentX * segmentX + segmentY * segmentY;
+                    const fraction = segmentLengthSquared > 0
+                        ? Math.min(1, Math.max(0,
+                            ((pointerX - startX) * segmentX + (pointerY - startY) * segmentY) /
+                            segmentLengthSquared))
+                        : 0;
+                    const pointX = startX + segmentX * fraction;
+                    const pointY = startY + segmentY * fraction;
+                    const distance = Math.hypot(pointX - pointerX, pointY - pointerY);
+                    if (distance < closestLineDistance) {
+                        closestLineDistance = distance;
+                        closestLinePoint = {
+                            x: start.x + (end.x - start.x) * fraction,
+                            y: start.y + (end.y - start.y) * fraction,
+                            canvasX: pointX,
+                            canvasY: pointY
+                        };
+                    }
+                }
+
+                if (closestLinePoint && closestLineDistance <= 8) {
+                    hoverX = closestLinePoint.canvasX;
+                    hoverY = closestLinePoint.canvasY;
+                    valueX = closestLinePoint.x;
+                    valueY = closestLinePoint.y;
+                    snapped = true;
+                }
+            }
+
+            context.beginPath();
+            context.setLineDash([4, 4]);
+            context.strokeStyle = 'rgba(255, 255, 255, 0.75)';
+            context.lineWidth = 1;
+            context.moveTo(hoverX, top);
+            context.lineTo(hoverX, bottom);
+            context.moveTo(left, hoverY);
+            context.lineTo(right, hoverY);
+            context.stroke();
+            context.setLineDash([]);
+
+            if (snapped) {
+                context.beginPath();
+                context.arc(hoverX, hoverY, 5, 0, Math.PI * 2);
+                context.fillStyle = 'rgba(255, 255, 255, 0.2)';
+                context.fill();
+                context.strokeStyle = 'white';
+                context.lineWidth = 1.5;
+                context.stroke();
+            }
+
+            const dataType = closestPoint && closestPointDistance <= 14
+                ? closestPoint.type
+                : 'Trajectory';
+            const coordinates = `(${valueX.toFixed(3)}, ${valueY.toFixed(3)})`;
+            context.font = '11px sans-serif';
+            const labelWidth = Math.max(
+                context.measureText(dataType).width,
+                context.measureText(coordinates).width
+            ) + 12;
+            const labelHeight = 36;
+            const preferredLabelX = hoverX + labelWidth + 12 <= right
+                ? hoverX + 10
+                : hoverX - labelWidth - 10;
+            const preferredLabelY = hoverY + labelHeight + 10 <= bottom
+                ? hoverY + 10
+                : hoverY - labelHeight - 10;
+            const labelX = Math.min(right - labelWidth, Math.max(left, preferredLabelX));
+            const labelY = Math.min(bottom - labelHeight, Math.max(top, preferredLabelY));
+            context.fillStyle = 'rgba(20, 12, 28, 0.92)';
+            context.strokeStyle = 'rgba(255, 255, 255, 0.75)';
+            context.lineWidth = 1;
+            context.beginPath();
+            context.roundRect(labelX, labelY, labelWidth, labelHeight, 4);
+            context.fill();
+            context.stroke();
+            context.fillStyle = 'white';
+            context.textAlign = 'left';
+            context.textBaseline = 'middle';
+            context.fillText(dataType, labelX + 6, labelY + 12);
+            context.fillText(coordinates, labelX + 6, labelY + 26);
+            context.textBaseline = 'alphabetic';
         }
         context.restore();
 
@@ -1899,13 +2101,33 @@ function renderTrajectory() {
         context.textAlign = 'start';
     };
 
-    const lateralMarkers = lastBouncePoints.map(point => ({
+    const heightPeakIndex = lastTrajectory.reduce(
+        (peakIndex, point, index, points) =>
+            point.y > points[peakIndex].y ? index : peakIndex,
+        0
+    );
+    const heightPeakPoint = lastTrajectory[heightPeakIndex];
+    const importantMarkers = [
+        ...(heightPeakPoint ? [{ point: heightPeakPoint, type: 'Height Peak' }] : []),
+        ...(lastCobraBeforeRisePoint
+            ? [{ point: lastCobraBeforeRisePoint, type: 'Before Cobra Rise' }]
+            : []),
+        ...(lastSnapPoint ? [{ point: lastSnapPoint, type: 'Snap' }] : []),
+        ...(lastCarryPoint ? [{ point: lastCarryPoint, type: 'Carry' }] : []),
+        ...lastBouncePoints.map((point, index) => ({
+            point,
+            type: `Bounce ${index + 1}`
+        }))
+    ];
+    const lateralMarkers = importantMarkers.map(({ point, type }) => ({
         x: point.x * DESVIO_SCALE_PANGYA_TO_YARD * lastLateralScaleToPb,
-        y: point.z / 3.2
+        y: point.z / 3.2,
+        type
     }));
-    const heightMarkers = lastBouncePoints.map(point => ({
+    const heightMarkers = importantMarkers.map(({ point, type }) => ({
         x: point.z / 3.2,
-        y: point.y * heightUnitToMeters
+        y: point.y * heightUnitToMeters,
+        type
     }));
     drawPanel(
         panels[0],
@@ -2028,8 +2250,10 @@ trajectoryCanvas.addEventListener('pointerdown', (event) => {
             x: event.clientX,
             y: event.clientY
         };
+        trajectoryHover = null;
         trajectoryCanvas.setPointerCapture(event.pointerId);
         trajectoryCanvas.style.cursor = axis === 'x' ? 'ew-resize' : 'ns-resize';
+        renderTrajectory();
         return;
     }
 
@@ -2041,8 +2265,10 @@ trajectoryCanvas.addEventListener('pointerdown', (event) => {
 
     const [panelId] = panelHit;
     activeTrajectoryPan = { panelId, x: event.clientX, y: event.clientY };
+    trajectoryHover = null;
     trajectoryCanvas.setPointerCapture(event.pointerId);
     trajectoryCanvas.style.cursor = 'grabbing';
+    renderTrajectory();
 });
 trajectoryCanvas.addEventListener('pointermove', (event) => {
     const rect = trajectoryCanvas.getBoundingClientRect();
@@ -2058,9 +2284,25 @@ trajectoryCanvas.addEventListener('pointermove', (event) => {
             (x >= plot.xAxisBand.left && x <= plot.xAxisBand.right &&
                 y >= plot.xAxisBand.top && y <= plot.xAxisBand.bottom)
         );
+        const plotHit = Object.entries(trajectoryPlotRanges).find(([, plot]) =>
+            x >= plot.left && x <= plot.right && y >= plot.top && y <= plot.bottom
+        );
+        const nextHover = plotHit
+            ? { panelId: plotHit[0], x, y }
+            : null;
+        if (!trajectoryHover ||
+            !nextHover ||
+            trajectoryHover.panelId !== nextHover.panelId ||
+            trajectoryHover.x !== nextHover.x ||
+            trajectoryHover.y !== nextHover.y) {
+            trajectoryHover = nextHover;
+            renderTrajectory();
+        }
         if (axisHit) {
             const verticalAxis = x >= axisHit.yAxisBand.left && x <= axisHit.yAxisBand.right;
             trajectoryCanvas.style.cursor = verticalAxis ? 'ns-resize' : 'ew-resize';
+        } else if (plotHit) {
+            trajectoryCanvas.style.cursor = 'crosshair';
         } else {
             trajectoryCanvas.style.cursor = 'grab';
         }
@@ -2102,6 +2344,12 @@ trajectoryCanvas.addEventListener('pointermove', (event) => {
 trajectoryCanvas.addEventListener('pointerup', stopTrajectoryInteraction);
 trajectoryCanvas.addEventListener('pointercancel', stopTrajectoryInteraction);
 trajectoryCanvas.addEventListener('lostpointercapture', () => stopTrajectoryInteraction());
+trajectoryCanvas.addEventListener('pointerleave', () => {
+    if (activeTrajectoryPan || activeTrajectoryZoom || !trajectoryHover)
+        return;
+    trajectoryHover = null;
+    renderTrajectory();
+});
 trajectoryCanvas.style.cursor = 'grab';
 window.addEventListener('resize', renderTrajectory);
 
